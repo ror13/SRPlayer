@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">SysRazPlayer</string>
+    <string name="title_activity_filedialog">filedialog</string>
 </resources>
