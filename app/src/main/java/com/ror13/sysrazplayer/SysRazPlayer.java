@@ -22,8 +22,8 @@ import java.lang.Thread;
 public class SysRazPlayer {
     private MediaExtractor extractor;
     private MediaCodec decoder;
-    private Surface surface;
-    public void run(String path) {
+
+    public void run(String path, Surface surface) {
         extractor = new MediaExtractor();
         try {
             extractor.setDataSource(path);
