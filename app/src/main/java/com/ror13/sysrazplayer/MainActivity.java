@@ -1,5 +1,6 @@
 package com.ror13.sysrazplayer;
 
+import android.content.Intent;
 import android.media.MediaRecorder;
 import android.app.Activity;
 import android.os.Bundle;
@@ -18,8 +19,6 @@ import android.view.MotionEvent;
 import java.nio.ByteBuffer;
 
 public class MainActivity extends Activity  implements SurfaceHolder.Callback{
-    static final int OUTPUT_WIDTH = 640;
-    static final int OUTPUT_HEIGHT = 480;
 
 
     SurfaceView mSurfaceView;
@@ -30,7 +29,6 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
         setContentView(R.layout.activity_main);
         mSurfaceView = (SurfaceView) findViewById(R.id.surface);
         mSurfaceView.getHolder().addCallback(this);
-
     }
 
     @Override
@@ -54,9 +52,12 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
 
         SysRazPlayer player = new SysRazPlayer();
       //  player.run("/storage/sdcard0/Download/big_buck_bunny_240p_30mb.mp4",mSurfaceView.getHolder().getSurface());
-        player.run("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4",mSurfaceView.getHolder().getSurface());
+      //  player.run("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4",mSurfaceView.getHolder().getSurface());
 
+        Menu menu = new Menu(this);
+        menu.show();
 
+        //player.run("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4", mSurfaceView.getHolder().getSurface());
         return true;
     }
 }

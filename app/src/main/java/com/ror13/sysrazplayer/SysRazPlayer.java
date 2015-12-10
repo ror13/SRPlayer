@@ -13,25 +13,23 @@ import java.lang.Thread;
 
 
 
-
-
-
-/**
- * Created by ror131 on 12/8/15.
- */
 public class SysRazPlayer {
     private MediaExtractor extractor;
     private MediaCodec decoder;
 
+
     public void run(String path, Surface surface) {
+
+        //init demuxer
         extractor = new MediaExtractor();
         try {
             extractor.setDataSource(path);
         } catch (IOException e) {
-            Log.e("DEBUG", "IOException ");
+            Log.e("ERROR", e.getMessage());
             e.printStackTrace();
         }
 
+        //init decoders
         for (int i = 0; i < extractor.getTrackCount(); i++) {
             MediaFormat format = extractor.getTrackFormat(i);
             String mime = format.getString(MediaFormat.KEY_MIME);
@@ -62,7 +60,7 @@ public class SysRazPlayer {
 
         while (!Thread.interrupted()) {
             if (!isEOS) {
-                int inIndex = decoder.dequeueInputBuffer(10000);
+                int inIndex = decoder.dequeueInputBuffer(1);
                 if (inIndex >= 0) {
                     ByteBuffer buffer = inputBuffers[inIndex];
                     int sampleSize = extractor.readSampleData(buffer, 0);
@@ -77,7 +75,7 @@ public class SysRazPlayer {
                 }
             }
 
-            int outIndex = decoder.dequeueOutputBuffer(info, 10000);
+            int outIndex = decoder.dequeueOutputBuffer(info, 1);
             switch (outIndex) {
                 case MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED:
                     Log.d("DecodeActivity", "INFO_OUTPUT_BUFFERS_CHANGED");
@@ -91,7 +89,7 @@ public class SysRazPlayer {
                     break;
                 default:
                     ByteBuffer buffer = outputBuffers[outIndex];
-                    Log.v("DecodeActivity", "We can't use this buffer but render it due to the API limit, " + buffer);
+                    //Log.v("DecodeActivity", "We can't use this buffer but render it due to the API limit, " + buffer);
 
                     // We use a very simple clock to keep the video FPS, or the video
                     // playback will be too fast
@@ -118,3 +116,4 @@ public class SysRazPlayer {
         extractor.release();
     }
 }
+
