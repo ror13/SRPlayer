@@ -7,7 +7,10 @@ import android.view.Surface;
 import android.media.MediaFormat;
 import android.util.*;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.lang.Thread;
 
@@ -23,7 +26,14 @@ public class SysRazPlayer {
         //init demuxer
         extractor = new MediaExtractor();
         try {
-            extractor.setDataSource(path);
+            if (path.startsWith("rtsp://")){
+
+                FileInputStream f = new FileInputStream(new File(path));
+                extractor.setDataSource(f.getFD());
+            }else{
+                extractor.setDataSource(path);
+            }
+
         } catch (IOException e) {
             Log.e("ERROR", e.getMessage());
             e.printStackTrace();
