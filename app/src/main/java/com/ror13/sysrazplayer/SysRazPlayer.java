@@ -26,14 +26,7 @@ public class SysRazPlayer {
         //init demuxer
         extractor = new MediaExtractor();
         try {
-            if (path.startsWith("rtsp://")){
-
-                FileInputStream f = new FileInputStream(new File(path));
-                extractor.setDataSource(f.getFD());
-            }else{
                 extractor.setDataSource(path);
-            }
-
         } catch (IOException e) {
             Log.e("ERROR", e.getMessage());
             e.printStackTrace();

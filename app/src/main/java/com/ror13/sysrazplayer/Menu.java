@@ -19,11 +19,13 @@ import java.net.ContentHandler;
  */
 public class Menu extends Dialog implements View.OnClickListener{
     private static Menu singleton;
-    private Menu (Context context){
+    Menu(Context context){
         super(context);
         setContentView(R.layout.menu);
         findViewById(R.id.play).setOnClickListener(this);
         findViewById(R.id.open).setOnClickListener(this);
+        EditText et = (EditText) findViewById(R.id.editText);
+        et.setText("/system/big_buck_bunny.mp4");
     }
 
     public static Menu getInstance(Context context){

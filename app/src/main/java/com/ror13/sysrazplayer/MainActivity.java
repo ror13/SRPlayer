@@ -39,6 +39,8 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
 
         LocalBroadcastManager.getInstance(this).registerReceiver(mMessageReceiver,
                 new IntentFilter(CUSTOM_EVENT));
+        Menu menu =  Menu.getInstance(this);
+        menu.show();
     }
     private BroadcastReceiver mMessageReceiver = new BroadcastReceiver() {
         @Override
@@ -46,23 +48,28 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
             // Get extra data included in the Intent
             String message = intent.getStringExtra(CUSTOM_EVENT);
             //Log.d("receiver", "Got message: " + message);
-            SysRazPlayer player = new SysRazPlayer();
+
             //player.run(message, mSurfaceView.getHolder().getSurface());
             //player.run("http://mirror.cessen.com/blender.org/peach/trailer/trailer_1080p.mov", mSurfaceView.getHolder().getSurface());
-            MediaPlayer mp = new MediaPlayer();
-            try {
-                mp.setDataSource("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
-                mp.setSurface(mSurfaceView.getHolder().getSurface());
-                mp.prepare();
-                mp.start();
-            } catch (IllegalArgumentException e) {
-                e.printStackTrace();
-            } catch (IllegalStateException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
             //player.run("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov", mSurfaceView.getHolder().getSurface());
+            if (message.startsWith("rtsp://")) {
+                MediaPlayer mp = new MediaPlayer();
+                try {
+                    mp.setDataSource(message);
+                    mp.setSurface(mSurfaceView.getHolder().getSurface());
+                    mp.prepare();
+                    mp.start();
+                } catch (IllegalArgumentException e) {
+                    e.printStackTrace();
+                } catch (IllegalStateException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                SysRazPlayer player = new SysRazPlayer();
+                player.run(message, mSurfaceView.getHolder().getSurface());
+            }
         }
     };
     @Override
