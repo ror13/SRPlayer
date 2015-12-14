@@ -27,7 +27,7 @@ public class SysRazPlayer {
         extractor = new MediaExtractor();
         try {
                 extractor.setDataSource(path);
-        } catch (IOException e) {
+        } catch (Exception e) {
             Log.e("ERROR", e.getMessage());
             e.printStackTrace();
         }
@@ -38,11 +38,7 @@ public class SysRazPlayer {
             String mime = format.getString(MediaFormat.KEY_MIME);
             if (mime.startsWith("video/")) {
                 extractor.selectTrack(i);
-                try {
-                    decoder = MediaCodec.createDecoderByType(mime);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                decoder = MediaCodec.createDecoderByType(mime);
                 decoder.configure(format, surface, null, 0);
                 break;
             }
