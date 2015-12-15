@@ -20,24 +20,28 @@ import java.net.ContentHandler;
 interface OnEndConfig {
     void onEndConfig();
 }
+
 public class Menu extends Dialog implements View.OnClickListener{
     private static Menu singleton;
     private OnEndConfig onEndConfig;
+    private static Context mContext;
     String mUri;
-    Menu(Context context,OnEndConfig onEndConfig){
-        super(context);
+    public Menu(){
+        super(mContext);
         setContentView(R.layout.menu);
         findViewById(R.id.play).setOnClickListener(this);
         findViewById(R.id.open).setOnClickListener(this);
         EditText et = (EditText) findViewById(R.id.editText);
 
-        this.onEndConfig = onEndConfig;
+
         et.setText("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
     }
 
     public static Menu getInstance(Context context, OnEndConfig onEndConfig){
         if (singleton == null){
-            singleton = new Menu(context, onEndConfig);
+            mContext = context;
+            singleton = new Menu();
+            singleton.onEndConfig = onEndConfig;
         }
         return singleton;
     }

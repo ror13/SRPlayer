@@ -1,5 +1,5 @@
 #!/bin/sh
 
-export ANDROID_NDK_HOME=/home/ror13/src/Android/SDK/ndk-bundle
+export ANDROID_NDK_HOME=/home/ror131/Android/Sdk/ndk-bundle
 export PATH="${PATH}:${ANDROID_NDK_HOME}"
 ndk-build V=1

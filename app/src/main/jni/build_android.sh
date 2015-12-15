@@ -16,7 +16,7 @@
 # limitations under the License.
 
 set -x
-ANDROID_NDK_HOME=/home/ror13/src/Android/SDK/ndk-bundle
+ANDROID_NDK_HOME=/home/ror131/Android/Sdk/ndk-bundle
 
 if [ "$ANDROID_NDK_HOME" = "" ]; then
 	echo ANDROID_NDK_HOME variable not set, exiting
