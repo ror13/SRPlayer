@@ -22,7 +22,7 @@
     // Open video file
     const char* filename = (*env)->GetStringUTFChars(env, path, 0);
     //need enable fo release
-    //(*env)->ReleaseStringUTFChars(env, path, filename);
+
     AVFormatContext* format_context = NULL;
     err = avformat_open_input(&format_context, filename, NULL, NULL);
     if (err < 0) {
@@ -92,68 +92,27 @@
 
 
                 if(ANativeWindow_lock(window,&buffer,NULL) ==0 ) {
+                    AVPicture picture;
+                    avpicture_fill(&picture,buffer.bits, AV_PIX_FMT_RGBA,buffer.stride,buffer.height);
+                    sws_scale(img_convert_context,
+                                frame->data, frame->linesize,
+                                0, codec_context->height,
+                                picture.data,
+                                picture.linesize);
 
-sws_scale(img_convert_context,
-        frame->data, frame->linesize,
-0, codec_context->height,
-(unsigned char*) buffer.bits, frame->linesize);
-
-unsigned char* out = (unsigned char*) buffer.bits;
-unsigned int i;
-for( i =0; i<codec_context->width*codec_context->height ; i++) {
-out[4*i] = 0;
-out[4*i+1] = 255;
-out[4*i+2] = 0;
-}
-
-                    __android_log_write(ANDROID_LOG_ERROR, "ffmpeg", "write frame");
+                    //__android_log_write(ANDROID_LOG_ERROR, "ffmpeg", msg);
                     ANativeWindow_unlockAndPost(window);
                 }
-
-                /*SDL_LockYUVOverlay(bmp);
-
-                // Convert frame to YV12 pixel format for display in SDL overlay
-
-                AVPicture pict;
-                pict.data[0] = bmp->pixels[0];
-                pict.data[1] = bmp->pixels[2];  // it's because YV12
-                pict.data[2] = bmp->pixels[1];
-
-                pict.linesize[0] = bmp->pitches[0];
-                pict.linesize[1] = bmp->pitches[2];
-                pict.linesize[2] = bmp->pitches[1];
-
-                sws_scale(img_convert_context,
-                          frame->data, frame->linesize,
-                          0, codec_context->height,
-                          pict.data, pict.linesize);
-
-                SDL_UnlockYUVOverlay(bmp);
-
-                SDL_Rect rect;
-                rect.x = 0;
-                rect.y = 0;
-                rect.w = codec_context->width;
-                rect.h = codec_context->height;
-                SDL_DisplayYUVOverlay(bmp, &rect);
-                 */
             }
         }
 
         // Free the packet that was allocated by av_read_frame
         av_free_packet(&packet);
 
-        // Handling SDL events there
-        //SDL_Event event;
-        //if (SDL_PollEvent(&event)) {
-        //    if (event.type == SDL_QUIT) {
-        //        break;
-        //   }
-        //}
     }
 
     sws_freeContext(img_convert_context);
-    ANativeWindow_release(window);
+
     // Free the YUV frame
     av_free(frame);
 
@@ -163,9 +122,9 @@ out[4*i+2] = 0;
     // Close the video file
     avformat_close_input(&format_context);
 
-    // Quit SDL
-    //SDL_Quit();
-    return 0;
+    ANativeWindow_release(window);
+    (*env)->ReleaseStringUTFChars(env, path, filename);
+
 }
 
 

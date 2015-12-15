@@ -16,24 +16,27 @@ LOCAL_PATH := $(call my-dir)
 ARCH := $(APP_ABI)
 
 
-
 include $(CLEAR_VARS)
 LOCAL_MODULE := ffmpeg-prebuilt
 LOCAL_SRC_FILES := ffmpeg-build/$(TARGET_ARCH_ABI)/libffmpeg.so
 LOCAL_EXPORT_C_INCLUDES := ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_EXPORT_LDLIBS := ffmpeg-build/$(TARGET_ARCH_ABI)/libffmpeg.so
 LOCAL_PRELINK_MODULE := true
-include $(BUILT_SHARED_LIBRARY)
+include $(PREBUILT_SHARED_LIBRARY)
+
 
 
 include $(CLEAR_VARS)
-LOCAL_MODULE    := CFfmpeg
-LOCAL_SRC_FILES := CFfmpeg.c
-LOCAL_C_INCLUDES += $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
-LOCAL_LDFLAGS := -llog  -landroid  -lffmpeg -L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)
-LOCAL_SHARED_LIBRARY := ffmpeg-prebuilt
 LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
+LOCAL_MODULE := CFfmpeg
+LOCAL_SRC_FILES := CFfmpeg.c
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
+LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -g $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/libffmpeg.so
+#-L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)
+LOCAL_SHARED_LIBRARY := ffmpeg-prebuilt
 include $(BUILD_SHARED_LIBRARY)
 
 
-#$(call import-module,android/cpufeatures)
+
+#include $(call all-makefiles-under,$(LOCAL_PATH))
+#$(call import-module,cpufeatures)

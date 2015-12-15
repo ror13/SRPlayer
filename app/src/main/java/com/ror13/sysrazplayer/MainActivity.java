@@ -27,14 +27,20 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
 
     public static final String CUSTOM_EVENT= "main-action-event";
     SurfaceView mSurfaceView;
-
+    Menu menu;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mSurfaceView = (SurfaceView) findViewById(R.id.surface);
         mSurfaceView.getHolder().addCallback(this);
-        Menu menu =  Menu.getInstance(this);
+        menu =  Menu.getInstance(this, new OnEndConfig() {
+            @Override
+            public void onEndConfig() {
+                CFfmpeg player = new CFfmpeg();
+                player.play(Menu.getInstance(null, null).getUri(), MainActivity.this.mSurfaceView.getHolder().getSurface());
+            }
+        });
         menu.show();
     }
 
@@ -62,21 +68,8 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
         super.onTouchEvent(event);
         Log.e("tst debug:::", "2");
 
-
-        //SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surface);
-        CFfmpeg hj = new CFfmpeg();
-        Log.e("fdf  1", hj.tst());
-        hj.setPath("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4");
-        hj.setSurface(mSurfaceView.getHolder().getSurface());
-        hj.play("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4", mSurfaceView.getHolder().getSurface());
-
-        //hj.start();
-        Log.e("fdf  2", hj.tst());
-      //  player.run("/storage/sdcard0/Download/big_buck_bunny_240p_30mb.mp4",mSurfaceView.getHolder().getSurface());
-      //  player.run("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4",mSurfaceView.getHolder().getSurface());
-
-        Menu menu =  Menu.getInstance(this);
         menu.show();
+        //SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surface);
 
         //player.run("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4", mSurfaceView.getHolder().getSurface());
         return true;

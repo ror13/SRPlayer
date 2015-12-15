@@ -17,20 +17,27 @@ import java.net.ContentHandler;
 /**
  * Created by ror131 on 12/10/15.
  */
+interface OnEndConfig {
+    void onEndConfig();
+}
 public class Menu extends Dialog implements View.OnClickListener{
     private static Menu singleton;
-    Menu(Context context){
+    private OnEndConfig onEndConfig;
+    String mUri;
+    Menu(Context context,OnEndConfig onEndConfig){
         super(context);
         setContentView(R.layout.menu);
         findViewById(R.id.play).setOnClickListener(this);
         findViewById(R.id.open).setOnClickListener(this);
         EditText et = (EditText) findViewById(R.id.editText);
-        et.setText("/system/big_buck_bunny.mp4");
+
+        this.onEndConfig = onEndConfig;
+        et.setText("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
     }
 
-    public static Menu getInstance(Context context){
+    public static Menu getInstance(Context context, OnEndConfig onEndConfig){
         if (singleton == null){
-            singleton = new Menu(context);
+            singleton = new Menu(context, onEndConfig);
         }
         return singleton;
     }
@@ -39,11 +46,10 @@ public class Menu extends Dialog implements View.OnClickListener{
     public void onClick(View v) {
         switch(v.getId()){
             case R.id.play : dismiss();
-                Intent intent = new Intent(MainActivity.CUSTOM_EVENT);
                 EditText et = (EditText) findViewById(R.id.editText);
-                intent.putExtra(MainActivity.CUSTOM_EVENT, et.getText().toString());
-
-
+                mUri = et.getText().toString();
+                if (onEndConfig != null)
+                    onEndConfig.onEndConfig();
                 break;
             case R.id.open : selectFile(); break;
         }
@@ -51,5 +57,9 @@ public class Menu extends Dialog implements View.OnClickListener{
 
     private void selectFile(){
 
+    }
+
+    public String getUri(){
+        return mUri;
     }
 }
