@@ -8,11 +8,15 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
-
+#include <dlfcn.h>
 
 //http://stackoverflow.com/questions/24675618/android-ffmpeg-bad-video-output
  Java_com_ror13_sysrazplayer_CFfmpeg_play( JNIEnv* env, jobject thiz, jstring path, jobject surface){
 
+void * libstagefright = dlopen("libstagefright.so", RTLD_NOW);
+if(!libstagefright){
+__android_log_write(ANDROID_LOG_ERROR, "libstagefright", "Not Found");
+}
 
     // Register all available file formats and codecs
     av_register_all();

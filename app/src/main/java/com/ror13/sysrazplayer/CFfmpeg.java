@@ -1,5 +1,6 @@
 package com.ror13.sysrazplayer;
 
+import android.util.Log;
 import android.view.Surface;
 
 /**
@@ -16,6 +17,7 @@ public class CFfmpeg extends Thread{
         this.surface =surface;
     }
     static {
+        Log.e("SFSJKDFHNSKJDFBHSKDJB","+++++++++++++++++++++++++++++++++++++++++++++++++++++");
         System.loadLibrary("CFfmpeg");
     }
     public void run() {

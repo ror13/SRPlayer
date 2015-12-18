@@ -37,8 +37,14 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
         menu =  Menu.getInstance(this, new OnEndConfig() {
             @Override
             public void onEndConfig() {
+                /*SysRazPlayer player = new SysRazPlayer();
+                player.setPath(Menu.getInstance(null, null).getUri());
+                player.setSurface(MainActivity.this.mSurfaceView.getHolder().getSurface());
+                player.start();                */
                 CFfmpeg player = new CFfmpeg();
-                player.play(Menu.getInstance(null, null).getUri(), MainActivity.this.mSurfaceView.getHolder().getSurface());
+                player.setPath(Menu.getInstance(null, null).getUri());
+                player.setSurface(MainActivity.this.mSurfaceView.getHolder().getSurface());
+                player.start();
             }
         });
         menu.show();
@@ -64,9 +70,7 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        Log.e("tst debug:::", "1");
         super.onTouchEvent(event);
-        Log.e("tst debug:::", "2");
 
         menu.show();
         //SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surface);
@@ -74,4 +78,6 @@ public class MainActivity extends Activity  implements SurfaceHolder.Callback{
         //player.run("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4", mSurfaceView.getHolder().getSurface());
         return true;
     }
+
+
 }

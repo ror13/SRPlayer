@@ -16,12 +16,19 @@ import java.lang.Thread;
 
 
 
-public class SysRazPlayer {
+public class SysRazPlayer extends Thread{
     private MediaExtractor extractor;
     private MediaCodec decoder;
+    String path;
+    Surface surface;
+    public void setPath(String path){
+        this.path =path;
+    }
+    public void setSurface(Surface surface){
+        this.surface =surface;
+    }
 
-
-    public void run(String path, Surface surface) {
+    public void run() {
 
         //init demuxer
         extractor = new MediaExtractor();
