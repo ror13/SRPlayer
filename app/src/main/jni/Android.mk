@@ -29,9 +29,10 @@ include $(PREBUILT_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
 LOCAL_MODULE := CFfmpeg
-LOCAL_SRC_FILES := CFfmpeg.c
+LOCAL_SRC_FILES := CFfmpeg.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
-LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -g $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/libffmpeg-neon.so 
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
+LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -g $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/libffmpeg-neon.so -L$(LOCAL_PATH)/lib
 #-L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)
 LOCAL_SHARED_LIBRARY := ffmpeg-prebuilt
 include $(BUILD_SHARED_LIBRARY)
