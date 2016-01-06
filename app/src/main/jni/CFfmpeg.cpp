@@ -37,6 +37,115 @@ using namespace android;
 
 
 
+class CustomSource : public MediaSource {
+public:
+    CustomSource(const char *videoPath) {
+        av_register_all();
+
+        mDataSource = avformat_alloc_context();
+        avformat_open_input(&mDataSource, videoPath, NULL, NULL);
+        for (int i = 0; i < mDataSource->nb_streams; i++) {
+            if (mDataSource->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+                mVideoIndex = i;
+                break;
+            }
+        }
+        mVideoTrack = mDataSource->streams[mVideoIndex]->codec;
+
+        size_t bufferSize = (mVideoTrack->width * mVideoTrack->height * 3) / 2;
+        mGroup.add_buffer(new MediaBuffer(bufferSize));
+        mFormat = new MetaData;
+
+        switch (mVideoTrack->codec_id) {
+            case CODEC_ID_H264:
+                mConverter = av_bitstream_filter_init("h264_mp4toannexb");
+                mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
+                if (mVideoTrack->extradata[0] == 1) {
+                    mFormat->setData(kKeyAVCC, kTypeAVCC, mVideoTrack->extradata, mVideoTrack->extradata_size);
+                }
+                break;
+            case CODEC_ID_MPEG4:
+                mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG4);
+                /*if (mDataSource->iformat && mDataSource->iformat->name && !strcasecmp(mDataSource->iformat->name, FFMPEG_AVFORMAT_MOV)) {
+                    MOVContext *mov = (MOVContext *)(mDataSource->priv_data);
+                    if (mov->esds_data != NULL && mov->esds_size > 0 && mov->esds_size < 256) {
+                        mFormat->setData(kKeyESDS, kTypeESDS, mov->esds_data, mov->esds_size);
+                    }
+                }*/
+                break;
+            case CODEC_ID_H263:
+                mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_H263);
+                break;
+            default:
+                break;
+        }
+
+        mFormat->setInt32(kKeyWidth, mVideoTrack->width);
+        mFormat->setInt32(kKeyHeight, mVideoTrack->height);
+    }
+
+    virtual sp<MetaData> getFormat() {
+        return mFormat;
+    }
+
+    virtual status_t start(MetaData *params) {
+        return OK;
+    }
+
+    virtual status_t stop() {
+        return OK;
+    }
+
+    virtual status_t read(MediaBuffer **buffer,
+                          const MediaSource::ReadOptions *options) {
+        AVPacket packet;
+        status_t ret;
+        bool found = false;
+
+        while (!found) {
+            ret = av_read_frame(mDataSource, &packet);
+            if (ret < 0) {
+                return ERROR_END_OF_STREAM;
+            }
+
+            if (packet.stream_index == mVideoIndex) {
+                if (mConverter) {
+                    av_bitstream_filter_filter(mConverter, mVideoTrack, NULL, &packet.data, &packet.size, packet.data, packet.size, packet.flags & AV_PKT_FLAG_KEY);
+                }
+                ret = mGroup.acquire_buffer(buffer, true);
+                if (ret == OK) {
+                    memcpy((*buffer)->data(), packet.data, packet.size);
+                    (*buffer)->set_range(0, packet.size);
+                    (*buffer)->meta_data()->clear();
+                    (*buffer)->meta_data()->setInt32(kKeyIsSyncFrame, packet.flags & AV_PKT_FLAG_KEY);
+                    (*buffer)->meta_data()->setInt64(kKeyTime, packet.pts);
+                }
+                found = true;
+            }
+            av_free_packet(&packet);
+        }
+
+        return ret;
+    }
+
+protected:
+    virtual ~CustomSource() {
+        if (mConverter) {
+            av_bitstream_filter_close(mConverter);
+        }
+        avformat_close_input(&mDataSource);
+    }
+private:
+    AVFormatContext *mDataSource;
+    AVCodecContext *mVideoTrack;
+    AVBitStreamFilterContext *mConverter;
+    MediaBufferGroup mGroup;
+    sp<MetaData> mFormat;
+    int mVideoIndex;
+};
+
+
+
 extern "C" {
 //http://stackoverflow.com/questions/24675618/android-ffmpeg-bad-video-output
 //Java_com_ror13_sysrazplayer_CFfmpeg_play( JNIEnv* env, jobject thiz, jstring path, jobject surface){
@@ -48,28 +157,47 @@ extern "C" {
 void
 Java_com_ror13_sysrazplayer_CFfmpeg_play(JNIEnv *env, jobject thiz, jstring path, jobject surface){
 
-
+    const char* filename = (env)->GetStringUTFChars( path, 0);
 __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
 
-OMXClient * mClient = new android::OMXClient;
-__android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "2");
+// At first, get an ANativeWindow from somewhere
+    sp<ANativeWindow> mNativeWindow = ANativeWindow_fromSurface(env,surface);
 
-mClient->connect();
-__android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "3");
+// Initialize the AVFormatSource from a video file
+    MediaSource * mVideoSource = new CustomSource(filename);
 
+// Once we get an MediaSource, we can encapsulate it with the OMXCodec now
+    OMXClient mClient;
+    mClient.connect();
+    sp<MediaSource> mVideoDecoder = OMXCodec::Create(mClient.interface(), mVideoSource->getFormat(), false, mVideoSource, NULL, 0, mNativeWindow);
+    mVideoDecoder->start();
 
-sp<MetaData> mFormat = new MetaData;
-__android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "4");
-mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
-__android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "5");
+// Just loop to read decoded frames from mVideoDecoder
+    for (;;) {
+        MediaBuffer *mVideoBuffer;
+        MediaSource::ReadOptions options;
+        status_t err = mVideoDecoder->read(&mVideoBuffer, &options);
+        if (err == OK) {
+            if (mVideoBuffer->range_length() > 0) {
+                // If video frame availabe, render it to mNativeWindow
+                sp<MetaData> metaData = mVideoBuffer->meta_data();
+                int64_t timeUs = 0;
+                metaData->findInt64(kKeyTime, &timeUs);
+                native_window_set_buffers_timestamp(mNativeWindow.get(), timeUs * 1000);
+                err = mNativeWindow->queueBuffer(mNativeWindow.get(), mVideoBuffer->graphicBuffer().get(),-1);
+                if (err == 0) {
+                    metaData->setInt32(kKeyRendered, 1);
+                }
+            }
+            mVideoBuffer->release();
+        }
+    }
 
-//AVFormatSource * mSource = new AVFormatSource;
-//MediaSource * mSource = new MediaSource("sdfsdf");
-
-sp<MediaSource> mVideoDecoder =  OMXCodec::Create(mClient->interface(), mFormat, false, NULL);
-__android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "6");
-
-mVideoDecoder->start();
+// Finally release the resources
+    //mVideoSource->clear();
+    mVideoDecoder->stop();
+    mVideoDecoder.clear();
+    mClient.disconnect();
 __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "7");
 
 
@@ -79,7 +207,7 @@ __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "7");
     int err;
 
     // Open video file
-    const char* filename = (env)->GetStringUTFChars( path, 0);
+    //const char* filename = (env)->GetStringUTFChars( path, 0);
     //need enable fo release
 
     AVFormatContext* format_context = NULL;

@@ -36,7 +36,7 @@ public:
 
     // Blocks until a buffer is available and returns it to the caller,
     // the returned buffer will have a reference count of 1.
-    status_t acquire_buffer(MediaBuffer **buffer);
+    status_t acquire_buffer(MediaBuffer **buffer, bool nonBlocking = false);
 
 protected:
     virtual void signalBufferReturned(MediaBuffer *buffer);
