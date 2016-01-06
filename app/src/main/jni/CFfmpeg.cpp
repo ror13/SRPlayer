@@ -161,8 +161,8 @@ Java_com_ror13_sysrazplayer_CFfmpeg_play(JNIEnv *env, jobject thiz, jstring path
 __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
 
 // At first, get an ANativeWindow from somewhere
-    sp<ANativeWindow> mNativeWindow = ANativeWindow_fromSurface(env,surface);
-
+    ANativeWindow * mNativeWindow = ANativeWindow_fromSurface(env,surface);
+    ANativeWindow_setBuffersGeometry(mNativeWindow, 1920, 1080, WINDOW_FORMAT_RGBA_8888);
 // Initialize the AVFormatSource from a video file
     MediaSource * mVideoSource = new CustomSource(filename);
 
@@ -183,8 +183,8 @@ __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
                 sp<MetaData> metaData = mVideoBuffer->meta_data();
                 int64_t timeUs = 0;
                 metaData->findInt64(kKeyTime, &timeUs);
-                native_window_set_buffers_timestamp(mNativeWindow.get(), timeUs * 1000);
-                err = mNativeWindow->queueBuffer(mNativeWindow.get(), mVideoBuffer->graphicBuffer().get(),-1);
+                native_window_set_buffers_timestamp(mNativeWindow, timeUs * 1000);
+                err = mNativeWindow->queueBuffer(mNativeWindow, mVideoBuffer->graphicBuffer().get(),-1);
                 if (err == 0) {
                     metaData->setInt32(kKeyRendered, 1);
                 }
