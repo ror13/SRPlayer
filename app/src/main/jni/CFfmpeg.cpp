@@ -20,48 +20,145 @@
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/OMXCodec.h>
+#include <media/stagefright/foundation/ALooper.h>
 #include <utils/List.h>
 #include <new>
 #include <map>
+#include <queue>
+#include <mutex>
+#include <tuple>
 
 extern "C" {
 #include <stdio.h>
+#include <pthread.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
+
 }
 
 using namespace android;
 
+class JFFMutex{
+public:
+    void acquire(){mMutex.lock();};
+    void release(){mMutex.unlock();};
+protected:
+    std::mutex mMutex;
+};
 
+class JFFThread{
+public:
+    JFFThread(void *(*threadFunc) (void *)){mThreadFunc = threadFunc;};
+    void start(){
+        pthread_create(&mThread, NULL, mThreadFunc, this);
+    }
+
+protected:
+    void *(*mThreadFunc) (void *);
+    pthread_t mThread;
+};
+
+
+
+template <class B_Type> class JFFQueue: public std::queue<B_Type>, public JFFMutex {
+};
+
+
+
+
+class JFFDemuxer : public JFFMutex, public JFFThread {
+public:
+    JFFDemuxer(const char * path, bool isNetwork = false);
+    ~JFFDemuxer();
+    const AVStream* getVideoStream(){return mVideoStream != -1 ? mFormatContext->streams[mVideoStream] : NULL;};
+    const AVStream* getAudioStream(){return mAudioStream != -1 ? mFormatContext->streams[mAudioStream] : NULL;};
+    JFFQueue <AVPacket*>* getVideoQueue(){return &mVideoQueue;};
+    JFFQueue <AVPacket*>* getAudioQueue(){return &mAudioQueue;};
+    bool isEof(){ return mEof;};
+protected:
+    static void * fileReading(void * baseObj);
+
+    AVFormatContext *mFormatContext;
+    int mVideoStream,
+        mAudioStream;
+    JFFQueue <AVPacket*> mVideoQueue,
+                         mAudioQueue;
+    pthread_t mThread;
+    bool mIsNetwork;
+    bool mEof;
+};
+
+JFFDemuxer::JFFDemuxer(const char * path, bool isNetwork):JFFThread(fileReading) {
+    av_register_all();
+    mVideoStream = -1;
+    mAudioStream = -1;
+    mEof = false;
+    mFormatContext = avformat_alloc_context();
+    avformat_open_input(&mFormatContext, path, NULL, NULL);
+    for (int i = 0; i < mFormatContext->nb_streams; i++) {
+        if (mFormatContext->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+            mVideoStream = i;
+            continue;
+        }
+        if (mFormatContext->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+            mAudioStream = i;
+            continue;
+        }
+    }
+    mIsNetwork = isNetwork;
+}
+
+JFFDemuxer::~JFFDemuxer(){
+    avformat_close_input(&mFormatContext);
+};
+
+void* JFFDemuxer::fileReading(void * baseObj) {
+    JFFDemuxer* self = (JFFDemuxer*) baseObj;
+    for (;;) {
+        AVPacket* packet = new AVPacket;
+        self->acquire();
+        if(av_read_frame(self->mFormatContext, packet) < 0){
+            self->mEof = true;
+            self->release();
+            delete  packet;
+            break;
+        }
+        if (packet->stream_index == self->mAudioStream) {
+            self->mAudioQueue.acquire();
+            self->mAudioQueue.push(packet);
+            self->mAudioQueue.release();
+            continue;
+        }
+        if (packet->stream_index == self->mVideoStream) {
+            self->mVideoQueue.acquire();
+            self->mVideoQueue.push(packet);
+            self->mVideoQueue.release();
+            continue;
+        }
+        self->release();
+        // Free the packet that was allocated by av_read_frame
+        //av_free_packet(&packet);
+    }
+}
 
 
 
 class CustomSource : public MediaSource {
 public:
-    CustomSource(const char *videoPath) {
-        av_register_all();
-
-        mDataSource = avformat_alloc_context();
-        avformat_open_input(&mDataSource, videoPath, NULL, NULL);
-        for (int i = 0; i < mDataSource->nb_streams; i++) {
-            if (mDataSource->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
-                mVideoIndex = i;
-                break;
-            }
-        }
-        mVideoTrack = mDataSource->streams[mVideoIndex]->codec;
-
-        size_t bufferSize = (mVideoTrack->width * mVideoTrack->height * 3) / 2;
+    CustomSource(AVCodecContext * codecContext, JFFQueue <AVPacket*>* inputQueu) {
+        mConverter = NULL;
+        mCodecContext = codecContext;
+        mInputQueu = inputQueu;
+        size_t bufferSize = (mCodecContext->width * mCodecContext->height * 3) / 2;
         mGroup.add_buffer(new MediaBuffer(bufferSize));
-        mFormat = new MetaData;
 
-        switch (mVideoTrack->codec_id) {
+        switch (mCodecContext->codec_id) {
             case CODEC_ID_H264:
                 mConverter = av_bitstream_filter_init("h264_mp4toannexb");
                 mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
-                if (mVideoTrack->extradata[0] == 1) {
-                    mFormat->setData(kKeyAVCC, kTypeAVCC, mVideoTrack->extradata, mVideoTrack->extradata_size);
+                if (mCodecContext->extradata[0] == 1) {
+                    mFormat->setData(kKeyAVCC, kTypeAVCC, mCodecContext->extradata, mCodecContext->extradata_size);
                 }
                 break;
             case CODEC_ID_MPEG4:
@@ -79,9 +176,8 @@ public:
             default:
                 break;
         }
-
-        mFormat->setInt32(kKeyWidth, mVideoTrack->width);
-        mFormat->setInt32(kKeyHeight, mVideoTrack->height);
+        mFormat->setInt32(kKeyWidth, mCodecContext->width);
+        mFormat->setInt32(kKeyHeight, mCodecContext->height);
     }
 
     virtual sp<MetaData> getFormat() {
@@ -98,10 +194,167 @@ public:
 
     virtual status_t read(MediaBuffer **buffer,
                           const MediaSource::ReadOptions *options) {
-        AVPacket packet;
         status_t ret;
-        bool found = false;
+        for (;;) {
+            mInputQueu->acquire();
+            if (!mInputQueu->empty()) {
+                break;
+            }
+            mInputQueu->release();
+        }
+        AVPacket * packet = mInputQueu->front();
+        mInputQueu->pop();
+        mInputQueu->release();
 
+        if (mConverter) {
+            av_bitstream_filter_filter(mConverter, mCodecContext, NULL, &packet->data, &packet->size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
+        }
+        ret = mGroup.acquire_buffer(buffer);
+        if (ret == OK) {
+            memcpy((*buffer)->data(), packet->data, packet->size);
+            (*buffer)->set_range(0, packet->size);
+            (*buffer)->meta_data()->clear();
+            (*buffer)->meta_data()->setInt32(kKeyIsSyncFrame, packet->flags & AV_PKT_FLAG_KEY);
+            (*buffer)->meta_data()->setInt64(kKeyTime, packet->pts);
+        }
+        av_free_packet(packet);
+        delete packet;
+        return ret;
+    }
+
+    virtual ~CustomSource() {
+        if (mConverter) {
+            av_bitstream_filter_close(mConverter);
+        }
+    }
+private:
+    JFFQueue <AVPacket*>* mInputQueu;
+    AVCodecContext *mCodecContext;
+    AVBitStreamFilterContext *mConverter;
+    MediaBufferGroup mGroup;
+    sp<MetaData> mFormat;
+};
+
+
+class JFFDecoder : public JFFThread {
+public:
+    JFFDecoder(JFFDemuxer * demuxer);
+
+protected:
+    static void * queueVideoDecoding(void * baseObj);
+    JFFDemuxer * mDemuxer;
+    std::queue <std::tuple<int64_t,AVPicture>> mOutQueue;
+};
+
+JFFDecoder::JFFDecoder(JFFDemuxer * demuxer):JFFThread(queueVideoDecoding) {
+    mDemuxer = demuxer;
+}
+
+
+void * JFFDecoder::queueVideoDecoding(void * baseObj){
+
+    JFFDecoder * self = (JFFDecoder*) baseObj;
+
+    OMXClient client;
+    client.connect();
+    CustomSource videoSource(self->mDemuxer->getVideoStream()->codec, self->mDemuxer->getVideoQueue());
+    sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource.getFormat(), false, &videoSource);
+    videoDecoder->start();
+    for (;;) {
+        MediaBuffer *videoBuffer;
+        MediaSource::ReadOptions options;
+        status_t err = videoDecoder->read(&videoBuffer, &options);
+        if (err == OK) {
+            if (videoBuffer->range_length() > 0) {
+                // If video frame availabe, render it to mNativeWindow
+                sp<MetaData> metaData = videoBuffer->meta_data();
+                int64_t timeUs = 0;
+                metaData->findInt64(kKeyTime, &timeUs);
+
+                //memcpy(wbuffer.bits,mVideoBuffer->data(), mVideoBuffer->size());
+
+
+            } else {
+                self->mDemuxer->acquire();
+                if(self->mDemuxer->isEof()) {
+                    self->mDemuxer->release();
+                    videoBuffer->release();
+                    break;
+                }
+                self->mDemuxer->release();
+
+            }
+            videoBuffer->release();
+        }
+    }
+    //videoSource.clear();
+    videoDecoder->stop();
+    //videoDecoder->clear();
+    client.disconnect();
+}
+
+/*
+class CustomSource : public MediaSource {
+public:
+    CustomSource(const char *videoPath) {
+        av_register_all();
+
+        mDataSource = avformat_alloc_context();
+        avformat_open_input(&mDataSource, videoPath, NULL, NULL);
+        for (int i = 0; i < mDataSource->nb_streams; i++) {
+            if (mDataSource->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+                mVideoIndex = i;
+                break;
+            }
+        }
+        mCodecContext = mDataSource->streams[mVideoIndex]->codec;
+
+        size_t bufferSize = (mCodecContext->width * mCodecContext->height * 3) / 2;
+        mGroup.add_buffer(new MediaBuffer(bufferSize));
+        mFormat = new MetaData;
+
+        switch (mCodecContext->codec_id) {
+            case CODEC_ID_H264:
+                mConverter = av_bitstream_filter_init("h264_mp4toannexb");
+                mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
+                if (mCodecContext->extradata[0] == 1) {
+                    mFormat->setData(kKeyAVCC, kTypeAVCC, mCodecContext->extradata, mCodecContext->extradata_size);
+                }
+                break;
+            case CODEC_ID_MPEG4:
+                mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG4);
+                /*if (mDataSource->iformat && mDataSource->iformat->name && !strcasecmp(mDataSource->iformat->name, FFMPEG_AVFORMAT_MOV)) {
+                    MOVContext *mov = (MOVContext *)(mDataSource->priv_data);
+                    if (mov->esds_data != NULL && mov->esds_size > 0 && mov->esds_size < 256) {
+                        mFormat->setData(kKeyESDS, kTypeESDS, mov->esds_data, mov->esds_size);
+                    }
+                }/
+                break;
+            case CODEC_ID_H263:
+                mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_H263);
+                break;
+            default:
+                break;
+        }
+        mFormat->setInt32(kKeyWidth, mCodecContext->width);
+        mFormat->setInt32(kKeyHeight, mCodecContext->height);
+    }
+
+    virtual sp<MetaData> getFormat() {
+        return mFormat;
+    }
+
+    virtual status_t start(MetaData *params) {
+        return OK;
+    }
+
+    virtual status_t stop() {
+        return OK;
+    }
+
+    virtual status_t read(MediaBuffer **buffer,
+                          const MediaSource::ReadOptions *options) {
+        AVPacket *packet;
         while (!found) {
             ret = av_read_frame(mDataSource, &packet);
             if (ret < 0) {
@@ -109,10 +362,10 @@ public:
             }
 
             if (packet.stream_index == mVideoIndex) {
-                if (mConverter) {
-                    av_bitstream_filter_filter(mConverter, mVideoTrack, NULL, &packet.data, &packet.size, packet.data, packet.size, packet.flags & AV_PKT_FLAG_KEY);
+                if (1) {
+                    av_bitstream_filter_filter(mConverter, mCodecContext, NULL, &packet.data, &packet.size, packet.data, packet.size, packet.flags & AV_PKT_FLAG_KEY);
                 }
-                ret = mGroup.acquire_buffer(buffer, true);
+                ret = mGroup.acquire_buffer(buffer);
                 if (ret == OK) {
                     memcpy((*buffer)->data(), packet.data, packet.size);
                     (*buffer)->set_range(0, packet.size);
@@ -137,13 +390,13 @@ protected:
     }
 private:
     AVFormatContext *mDataSource;
-    AVCodecContext *mVideoTrack;
+    AVCodecContext *mCodecContext;
     AVBitStreamFilterContext *mConverter;
     MediaBufferGroup mGroup;
     sp<MetaData> mFormat;
     int mVideoIndex;
 };
-
+*/
 
 
 extern "C" {
@@ -156,22 +409,25 @@ extern "C" {
 
 void
 Java_com_ror13_sysrazplayer_CFfmpeg_play(JNIEnv *env, jobject thiz, jstring path, jobject surface){
-
+/*
     const char* filename = (env)->GetStringUTFChars( path, 0);
 __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
-
+    class BLooper : public ALooper{};
+    BLooper looper;
 // At first, get an ANativeWindow from somewhere
     ANativeWindow * mNativeWindow = ANativeWindow_fromSurface(env,surface);
     ANativeWindow_setBuffersGeometry(mNativeWindow, 1920, 1080, WINDOW_FORMAT_RGBA_8888);
 // Initialize the AVFormatSource from a video file
     MediaSource * mVideoSource = new CustomSource(filename);
-
+    __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "2");
 // Once we get an MediaSource, we can encapsulate it with the OMXCodec now
     OMXClient mClient;
     mClient.connect();
-    sp<MediaSource> mVideoDecoder = OMXCodec::Create(mClient.interface(), mVideoSource->getFormat(), false, mVideoSource, NULL, 0, mNativeWindow);
+    __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "3");
+    sp<MediaSource> mVideoDecoder = OMXCodec::Create(mClient.interface(), mVideoSource->getFormat(), false, mVideoSource);
+    __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "4");
     mVideoDecoder->start();
-
+    __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "5");
 // Just loop to read decoded frames from mVideoDecoder
     for (;;) {
         MediaBuffer *mVideoBuffer;
@@ -183,11 +439,14 @@ __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
                 sp<MetaData> metaData = mVideoBuffer->meta_data();
                 int64_t timeUs = 0;
                 metaData->findInt64(kKeyTime, &timeUs);
-                native_window_set_buffers_timestamp(mNativeWindow, timeUs * 1000);
-                err = mNativeWindow->queueBuffer(mNativeWindow, mVideoBuffer->graphicBuffer().get(),-1);
-                if (err == 0) {
-                    metaData->setInt32(kKeyRendered, 1);
+
+                ANativeWindow_Buffer wbuffer;
+                if(ANativeWindow_lock(mNativeWindow,&wbuffer,NULL) ==0 ) {
+                    AVPicture picture;
+                    memcpy(wbuffer.bits,mVideoBuffer->data(), mVideoBuffer->size());
+                    ANativeWindow_unlockAndPost(mNativeWindow);
                 }
+
             }
             mVideoBuffer->release();
         }
@@ -199,7 +458,7 @@ __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
     mVideoDecoder.clear();
     mClient.disconnect();
 __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "7");
-
+*/
 
     // Register all available file formats and codecs
     av_register_all();
@@ -207,7 +466,7 @@ __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "7");
     int err;
 
     // Open video file
-    //const char* filename = (env)->GetStringUTFChars( path, 0);
+    const char* filename = (env)->GetStringUTFChars( path, 0);
     //need enable fo release
 
     AVFormatContext* format_context = NULL;
