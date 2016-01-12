@@ -24,8 +24,8 @@
 #include <utils/List.h>
 #include <new>
 #include <map>
-#include <queue>
 #include <mutex>
+#include <queue>
 #include <tuple>
 
 extern "C" {
@@ -39,12 +39,22 @@ extern "C" {
 
 using namespace android;
 
+
+struct JFFPicture{
+    AVPicture pic;
+    int64_t pts;
+};
+
 class JFFMutex{
 public:
-    void acquire(){mMutex.lock();};
-    void release(){mMutex.unlock();};
-protected:
-    std::mutex mMutex;
+    JFFMutex(){mMx = PTHREAD_MUTEX_INITIALIZER;};
+    //void acquire(){;};
+    //void release(){;};
+    void acquire(){pthread_mutex_lock(&mMx);};
+    void release(){pthread_mutex_unlock(&mMx);};
+private:
+    pthread_mutex_t mMx;
+
 };
 
 class JFFThread{
@@ -76,10 +86,14 @@ public:
     JFFQueue <AVPacket*>* getVideoQueue(){return &mVideoQueue;};
     JFFQueue <AVPacket*>* getAudioQueue(){return &mAudioQueue;};
     bool isEof(){ return mEof;};
+    void start(){
+        pthread_create(&mThread, NULL, fileReading, this);
+    }
 protected:
     static void * fileReading(void * baseObj);
 
-    AVFormatContext *mFormatContext;
+    int* zzz;
+    AVFormatContext* mFormatContext;
     int mVideoStream,
         mAudioStream;
     JFFQueue <AVPacket*> mVideoQueue,
@@ -89,12 +103,18 @@ protected:
     bool mEof;
 };
 
+AVFormatContext* formatContext;
+
 JFFDemuxer::JFFDemuxer(const char * path, bool isNetwork):JFFThread(fileReading) {
     av_register_all();
     mVideoStream = -1;
     mAudioStream = -1;
     mEof = false;
     mFormatContext = avformat_alloc_context();
+    formatContext = mFormatContext;
+    zzz = new int;
+    *zzz = 666;
+
     avformat_open_input(&mFormatContext, path, NULL, NULL);
     for (int i = 0; i < mFormatContext->nb_streams; i++) {
         if (mFormatContext->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -107,27 +127,43 @@ JFFDemuxer::JFFDemuxer(const char * path, bool isNetwork):JFFThread(fileReading)
         }
     }
     mIsNetwork = isNetwork;
+    __android_log_print(ANDROID_LOG_INFO, "this", "pointer = %p", this);
+    __android_log_print(ANDROID_LOG_INFO, "mFormatContext", "pointer = %p", mFormatContext);
+    __android_log_print(ANDROID_LOG_INFO, "zzz", "pointer = %p", zzz);
+    __android_log_print(ANDROID_LOG_INFO, "zzz", "int = %d", *zzz);
 }
 
 JFFDemuxer::~JFFDemuxer(){
+    __android_log_write(ANDROID_LOG_ERROR, "~JFFDemuxer()", "~JFFDemuxer()");
     avformat_close_input(&mFormatContext);
 };
 
 void* JFFDemuxer::fileReading(void * baseObj) {
     JFFDemuxer* self = (JFFDemuxer*) baseObj;
+    __android_log_write(ANDROID_LOG_ERROR, "fileReading", "------------------------");
+    __android_log_print(ANDROID_LOG_INFO, "self", "pointer = %p", self);
+    __android_log_print(ANDROID_LOG_INFO, "mFormatContext", "pointer = %p", self->mFormatContext);
+    __android_log_print(ANDROID_LOG_INFO, "zzz", "pointer = %p", self->zzz);
+    __android_log_print(ANDROID_LOG_INFO, "zzz", "int = %d", *self->zzz);
+    __android_log_print(ANDROID_LOG_INFO, "sometag", "pointer = %p", self->getVideoStream());
+
+
     for (;;) {
         AVPacket* packet = new AVPacket;
-        self->acquire();
-        if(av_read_frame(self->mFormatContext, packet) < 0){
+
+        //self->acquire();
+       // __android_log_write(ANDROID_LOG_ERROR, "fileReading", "2");
+        if(av_read_frame(formatContext, packet) < 0){
+            __android_log_write(ANDROID_LOG_ERROR, "fileReading", "av_read_frame(self->mFormatContext, packet) < 0");
             self->mEof = true;
             self->release();
             delete  packet;
             break;
         }
         if (packet->stream_index == self->mAudioStream) {
-            self->mAudioQueue.acquire();
-            self->mAudioQueue.push(packet);
-            self->mAudioQueue.release();
+            //self->mAudioQueue.acquire();
+           // self->mAudioQueue.push(packet);
+            //self->mAudioQueue.release();
             continue;
         }
         if (packet->stream_index == self->mVideoStream) {
@@ -136,10 +172,11 @@ void* JFFDemuxer::fileReading(void * baseObj) {
             self->mVideoQueue.release();
             continue;
         }
-        self->release();
+        //self->release();
         // Free the packet that was allocated by av_read_frame
         //av_free_packet(&packet);
     }
+    __android_log_write(ANDROID_LOG_ERROR, "fileReading", "EOF");
 }
 
 
@@ -147,19 +184,25 @@ void* JFFDemuxer::fileReading(void * baseObj) {
 class CustomSource : public MediaSource {
 public:
     CustomSource(AVCodecContext * codecContext, JFFQueue <AVPacket*>* inputQueu) {
+        __android_log_write(ANDROID_LOG_ERROR, "CustomSource", "1");
         mConverter = NULL;
         mCodecContext = codecContext;
         mInputQueu = inputQueu;
+        mFormat = new MetaData;
         size_t bufferSize = (mCodecContext->width * mCodecContext->height * 3) / 2;
         mGroup.add_buffer(new MediaBuffer(bufferSize));
-
+        __android_log_write(ANDROID_LOG_ERROR, "CustomSource", "2");
         switch (mCodecContext->codec_id) {
             case CODEC_ID_H264:
+                __android_log_write(ANDROID_LOG_ERROR, "CustomSource", "3");
                 mConverter = av_bitstream_filter_init("h264_mp4toannexb");
+                __android_log_write(ANDROID_LOG_ERROR, "CustomSource", "4");
                 mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
+                __android_log_write(ANDROID_LOG_ERROR, "CustomSource", "5");
                 if (mCodecContext->extradata[0] == 1) {
                     mFormat->setData(kKeyAVCC, kTypeAVCC, mCodecContext->extradata, mCodecContext->extradata_size);
                 }
+                __android_log_write(ANDROID_LOG_ERROR, "CustomSource", "6");
                 break;
             case CODEC_ID_MPEG4:
                 mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG4);
@@ -195,13 +238,16 @@ public:
     virtual status_t read(MediaBuffer **buffer,
                           const MediaSource::ReadOptions *options) {
         status_t ret;
+        __android_log_write(ANDROID_LOG_ERROR, "read", "1");
         for (;;) {
             mInputQueu->acquire();
             if (!mInputQueu->empty()) {
+                //__android_log_write(ANDROID_LOG_ERROR, "read", "4");
                 break;
             }
             mInputQueu->release();
         }
+        __android_log_write(ANDROID_LOG_ERROR, "read", "7");
         AVPacket * packet = mInputQueu->front();
         mInputQueu->pop();
         mInputQueu->release();
@@ -239,11 +285,11 @@ private:
 class JFFDecoder : public JFFThread {
 public:
     JFFDecoder(JFFDemuxer * demuxer);
-
+    JFFQueue <JFFPicture*>* getOutQueue(){return &mOutQueue;};
 protected:
     static void * queueVideoDecoding(void * baseObj);
     JFFDemuxer * mDemuxer;
-    std::queue <std::tuple<int64_t,AVPicture>> mOutQueue;
+    JFFQueue <JFFPicture*> mOutQueue;
 };
 
 JFFDecoder::JFFDecoder(JFFDemuxer * demuxer):JFFThread(queueVideoDecoding) {
@@ -252,14 +298,23 @@ JFFDecoder::JFFDecoder(JFFDemuxer * demuxer):JFFThread(queueVideoDecoding) {
 
 
 void * JFFDecoder::queueVideoDecoding(void * baseObj){
-
+    __android_log_write(ANDROID_LOG_ERROR, "queueVideoDecoding", "1");
     JFFDecoder * self = (JFFDecoder*) baseObj;
-
     OMXClient client;
     client.connect();
-    CustomSource videoSource(self->mDemuxer->getVideoStream()->codec, self->mDemuxer->getVideoQueue());
-    sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource.getFormat(), false, &videoSource);
+    __android_log_write(ANDROID_LOG_ERROR, "queueVideoDecoding", "2");
+
+    //self->mDemuxer->acquire();
+    sp<MediaSource> videoSource = new CustomSource(self->mDemuxer->getVideoStream()->codec, self->mDemuxer->getVideoQueue());
+    //MediaSource * videoSource = new CustomSource(NULL,NULL);
+    //self->mDemuxer->release();
+
+    __android_log_write(ANDROID_LOG_ERROR, "queueVideoDecoding", "3");
+    sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), false, videoSource);
+
     videoDecoder->start();
+    __android_log_write(ANDROID_LOG_ERROR, "queueVideoDecoding", "4");
+
     for (;;) {
         MediaBuffer *videoBuffer;
         MediaSource::ReadOptions options;
@@ -270,8 +325,19 @@ void * JFFDecoder::queueVideoDecoding(void * baseObj){
                 sp<MetaData> metaData = videoBuffer->meta_data();
                 int64_t timeUs = 0;
                 metaData->findInt64(kKeyTime, &timeUs);
+                JFFPicture* picture = new JFFPicture;
+                picture->pts = timeUs;
+                avpicture_alloc(&picture->pic,AV_PIX_FMT_RGBA,1920,1080);
+                //sws_scale(img_convert_context,
+                //          frame->data, frame->linesize,
+                //          0, codec_context->height,
+                //          picture.data,
+                //          picture.linesize);
 
-                //memcpy(wbuffer.bits,mVideoBuffer->data(), mVideoBuffer->size());
+                memcpy(picture->pic.data,videoBuffer->data(), videoBuffer->size());
+                self->mOutQueue.acquire();
+                self->mOutQueue.push(picture);
+                self->mOutQueue.release();
 
 
             } else {
@@ -291,6 +357,46 @@ void * JFFDecoder::queueVideoDecoding(void * baseObj){
     videoDecoder->stop();
     //videoDecoder->clear();
     client.disconnect();
+}
+
+class JFFVideoRender : public JFFThread{
+public:
+    JFFVideoRender(JFFQueue <JFFPicture*>* inputQueue, ANativeWindow * nativeWindow);
+protected:
+    static void * queueVideoRendering(void * baseObj);
+    JFFQueue <JFFPicture*> * mInputQueue;
+    ANativeWindow * mNativeWindow;
+};
+
+JFFVideoRender::JFFVideoRender(JFFQueue <JFFPicture*>* inputQueue, ANativeWindow * nativeWindow) :JFFThread(queueVideoRendering){
+    mInputQueue = inputQueue;
+    mNativeWindow = nativeWindow;
+    ANativeWindow_setBuffersGeometry(mNativeWindow, 1920, 1080, WINDOW_FORMAT_RGBA_8888);
+}
+
+void * JFFVideoRender::queueVideoRendering(void * baseObj){
+    JFFVideoRender* self = (JFFVideoRender*) baseObj;
+
+    for(;;){
+        break;
+        JFFPicture* picture = NULL;
+        self->mInputQueue->acquire();
+        if(!self->mInputQueue->empty()){
+            picture = self->mInputQueue->front();
+            self->mInputQueue->pop();
+        }
+        self->mInputQueue->release();
+        if(!picture){
+            continue;
+        }
+        ANativeWindow_Buffer wbuffer;
+        if(ANativeWindow_lock(self->mNativeWindow,&wbuffer,NULL) ==0 ) {
+            memcpy(wbuffer.bits,picture->pic.data, avpicture_get_size(AV_PIX_FMT_RGBA, wbuffer.width, wbuffer.height));
+            ANativeWindow_unlockAndPost(self->mNativeWindow);
+        }
+        avpicture_free(&picture->pic);
+        delete picture;
+    }
 }
 
 /*
@@ -409,6 +515,24 @@ extern "C" {
 
 void
 Java_com_ror13_sysrazplayer_CFfmpeg_play(JNIEnv *env, jobject thiz, jstring path, jobject surface){
+    const char* filename = (env)->GetStringUTFChars( path, 0);
+    ANativeWindow * nativeWindow = ANativeWindow_fromSurface(env,surface);
+    __android_log_write(ANDROID_LOG_ERROR, "NEW_STAGEFIGHT", "1");
+
+    JFFDemuxer demuxer(filename,false);
+    __android_log_write(ANDROID_LOG_ERROR, "NEW_STAGEFIGHT", "2");
+    //JFFDecoder decoder(&demuxer);
+    __android_log_write(ANDROID_LOG_ERROR, "NEW_STAGEFIGHT", "3");
+   // JFFVideoRender videoRender(decoder.getOutQueue(),nativeWindow);
+    __android_log_write(ANDROID_LOG_ERROR, "NEW_STAGEFIGHT", "4");
+    demuxer.start();
+    __android_log_write(ANDROID_LOG_ERROR, "NEW_STAGEFIGHT", "5");
+    //decoder.start();
+    __android_log_write(ANDROID_LOG_ERROR, "NEW_STAGEFIGHT", "6");
+   // videoRender.start();
+    __android_log_write(ANDROID_LOG_ERROR, "NEW_STAGEFIGHT", "7");
+    sleep(9999999);
+
 /*
     const char* filename = (env)->GetStringUTFChars( path, 0);
 __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
@@ -458,7 +582,7 @@ __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "1");
     mVideoDecoder.clear();
     mClient.disconnect();
 __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "7");
-*/
+
 
     // Register all available file formats and codecs
     av_register_all();
@@ -570,7 +694,7 @@ __android_log_write(ANDROID_LOG_ERROR, "STAGEFIGHT", "7");
 
     ANativeWindow_release(window);
     (env)->ReleaseStringUTFChars(path, filename);
-
+*/
 }
 
 
