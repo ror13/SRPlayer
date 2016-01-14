@@ -1,5 +1,6 @@
 package com.ror13.sysrazplayer;
 
+import android.os.Build;
 import android.util.Log;
 import android.view.Surface;
 
@@ -17,8 +18,13 @@ public class CFfmpeg extends Thread{
         this.surface =surface;
     }
     static {
-        Log.e("SFSJKDFHNSKJDFBHSKDJB","+++++++++++++++++++++++++++++++++++++++++++++++++++++");
-        System.loadLibrary("CFfmpeg");
+        int currentapiVersion = android.os.Build.VERSION.SDK_INT;
+        if (currentapiVersion > Build.VERSION_CODES.KITKAT){
+            System.loadLibrary("CFfmpeg_v5");
+        } else{
+            System.loadLibrary("CFfmpeg_v4");
+        }
+
     }
     public void run() {
         play(path, surface);

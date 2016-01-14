@@ -28,12 +28,26 @@ include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
-LOCAL_MODULE := CFfmpeg
+LOCAL_MODULE := CFfmpeg_v5
 LOCAL_SRC_FILES := CFfmpeg.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include
 LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon 
 LOCAL_LDFLAGS += -L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI) -L$(LOCAL_PATH)/dependencies/lib
+
+#-L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)
+LOCAL_SHARED_LIBRARY := ffmpeg-prebuilt
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
+LOCAL_MODULE := CFfmpeg_v4
+LOCAL_SRC_FILES := CFfmpeg.cpp
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include_v4
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include
+LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon 
+LOCAL_LDFLAGS += -L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI) -L$(LOCAL_PATH)/dependencies/lib_v4 -L$(LOCAL_PATH)/dependencies/lib
 
 #-L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)
 LOCAL_SHARED_LIBRARY := ffmpeg-prebuilt
