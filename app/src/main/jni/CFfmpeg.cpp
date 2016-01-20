@@ -39,6 +39,7 @@ extern "C" {
 }
 
 #define MAX_QUEUE_SIZE 10
+#define NATIVE_WINDOW_BUFFER_COUNT 3
 
 using namespace android;
 
@@ -108,8 +109,18 @@ JFFDemuxer::JFFDemuxer(const char * path, bool isNetwork):JFFThread(fileReading)
     mAudioStream = -1;
     mEof = false;
     mFormatContext = avformat_alloc_context();
+    avformat_network_init();
 
-    avformat_open_input(&mFormatContext, path, NULL, NULL);
+
+    AVDictionary *options = NULL;
+    av_dict_set(&options, "rtsp_transport", "tcp", 0);
+    //av_dict_set(&options, "thread_queue_size", "0", 0);
+    //av_dict_set(&options, "reorder_queue_size", "0", 0);
+
+    avformat_open_input(&mFormatContext, path, NULL, &options);
+    av_dict_free(&options);
+    avformat_find_stream_info(mFormatContext,NULL);
+
     for (int i = 0; i < mFormatContext->nb_streams; i++) {
         if (mFormatContext->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             mVideoStream = i;
@@ -161,6 +172,7 @@ void* JFFDemuxer::fileReading(void * baseObj) {
         if (packet->stream_index == self->mAudioStream) {
             self->mAudioQueue.acquire();
             //self->mAudioQueue.push(packet);
+            av_free_packet(packet);
             self->mAudioQueue.release();
             continue;
         }
@@ -236,11 +248,12 @@ public:
                 break;
             }
             mInputQueu->release();
+
         }
         AVPacket * packet = mInputQueu->front();
         mInputQueu->pop();
         mInputQueu->release();
-
+        //__android_log_print(ANDROID_LOG_INFO, "sometag", "paket size %d", packet->size);
         if (mConverter) {
             av_bitstream_filter_filter(mConverter, mCodecContext, NULL, &packet->data, &packet->size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
         }
@@ -250,7 +263,10 @@ public:
             (*buffer)->set_range(0, packet->size);
             (*buffer)->meta_data()->clear();
             (*buffer)->meta_data()->setInt32(kKeyIsSyncFrame, packet->flags & AV_PKT_FLAG_KEY);
-            (*buffer)->meta_data()->setInt64(kKeyTime, packet->pts);
+            if(packet->pts>=0)
+                (*buffer)->meta_data()->setInt64(kKeyTime, packet->pts);
+            else
+                (*buffer)->meta_data()->setInt64(kKeyTime, 0);
         }
         av_free_packet(packet);
         delete packet;
@@ -297,7 +313,8 @@ void * JFFDecoder::queueVideoDecoding(void * baseObj){
     OMXClient client;
     client.connect();
     sp<MediaSource> videoSource = new CustomSource(self->mDemuxer->getVideoStream()->codec, self->mDemuxer->getVideoQueue());
-    sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), false, videoSource, NULL, 0, self->mNativeWindow);
+    sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), \
+               false, videoSource, NULL, OMXCodec::kOnlySubmitOneInputBufferAtOneTime, self->mNativeWindow);
     videoDecoder->start();
 
 
@@ -345,6 +362,7 @@ JFFVideoRender::JFFVideoRender(JFFQueue <MediaBuffer*>* inputQueue, ANativeWindo
 
 void * JFFVideoRender::queueVideoRendering(void * baseObj){
     JFFVideoRender* self = (JFFVideoRender*) baseObj;
+    native_window_set_buffer_count(self->mNativeWindow,NATIVE_WINDOW_BUFFER_COUNT);
     int64_t startTime = 0;
     int64_t startPts = 0;
     for(;;){
@@ -365,20 +383,26 @@ void * JFFVideoRender::queueVideoRendering(void * baseObj){
         if(startTime == 0) {
             startPts = timeUs;
             startTime = getTime();
+            __android_log_write(ANDROID_LOG_ERROR, "0", "------------------------");
         }else {
-            timeDelay = (timeUs - startPts) * 100 - (getTime() - startTime);
-            if (timeDelay < 0) {
+            timeDelay = (timeUs - startPts) * 1000 - (getTime() - startTime);
+            if (timeDelay <= 0) {
                 startTime = 0;
                 mediaBuffer->release();
+                __android_log_write(ANDROID_LOG_ERROR, "1", "------------------------");
                 continue;
             }
 
             if (timeDelay > 0) {
-                usleep(timeDelay);
+                //__android_log_print(ANDROID_LOG_INFO, "sometag", "time delay %lld   time %lld   pts  %lld", timeDelay,getTime() - startTime, (timeUs - startPts) * 1000);
+                //usleep(timeDelay);
             }
         }
+
+        //native_window_set_buffers_timestamp(self->mNativeWindow, timeUs * 1000);
         self->mNativeWindow->queueBuffer(self->mNativeWindow, mediaBuffer->graphicBuffer().get(),-1);
         mediaBuffer->release();
+
     }
 }
 
@@ -508,7 +532,8 @@ Java_com_ror13_sysrazplayer_CFfmpeg_play(JNIEnv *env, jobject thiz, jstring path
     demuxer.start();
     decoder.start();
     videoRender.start();
-    sleep(9999999);
+    for(;;)
+        sleep(9999999);
 
 /*
     const char* filename = (env)->GetStringUTFChars( path, 0);

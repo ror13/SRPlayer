@@ -41,7 +41,8 @@ public class Menu extends Dialog implements View.OnClickListener{
         EditText et = (EditText) findViewById(R.id.editText);
 
 
-        et.setText("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4");
+        et.setText("rtsp://10.10.25.253:554/hdmi");
+        //et.setText("/storage/sdcard0/Download/startrekintodarkness-usajj60sneak_h1080p.mov");
         //et.setText("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
     }
 
