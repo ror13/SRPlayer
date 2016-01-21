@@ -28,8 +28,8 @@ include $(PREBUILT_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
-LOCAL_MODULE := CFfmpeg_v5
-LOCAL_SRC_FILES := CFfmpeg.cpp
+LOCAL_MODULE := CPlayer_v5
+LOCAL_SRC_FILES := CPlayer.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include
 LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon 
@@ -41,8 +41,8 @@ include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
-LOCAL_MODULE := CFfmpeg_v4
-LOCAL_SRC_FILES := CFfmpeg.cpp
+LOCAL_MODULE := CPlayer_v4
+LOCAL_SRC_FILES := CPlayer.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include_v4
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include

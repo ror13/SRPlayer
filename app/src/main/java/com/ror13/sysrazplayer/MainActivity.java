@@ -1,50 +1,35 @@
 package com.ror13.sysrazplayer;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.media.MediaPlayer;
-import android.media.MediaRecorder;
 import android.app.Activity;
 import android.os.Bundle;
-import android.util.Log;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.media.MediaCodec;
-import android.os.Bundle;
-import android.text.TextPaint;
-import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.MotionEvent;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
 
 public class MainActivity extends Activity  implements SurfaceHolder.Callback{
 
     public static final String CUSTOM_EVENT= "main-action-event";
     SurfaceView mSurfaceView;
     Menu menu;
+    CPlayer player;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mSurfaceView = (SurfaceView) findViewById(R.id.surface);
         mSurfaceView.getHolder().addCallback(this);
+        player = new CPlayer();
         menu =  Menu.getInstance(this, new OnEndConfig() {
             @Override
             public void onEndConfig() {
                 /*SysRazPlayer player = new SysRazPlayer();
-                player.setPath(Menu.getInstance(null, null).getUri());
+                player.setPath();
                 player.setSurface(MainActivity.this.mSurfaceView.getHolder().getSurface());
                 player.start();                */
-                CFfmpeg player = new CFfmpeg();
-                player.setPath(Menu.getInstance(null, null).getUri());
-                player.setSurface(MainActivity.this.mSurfaceView.getHolder().getSurface());
-                player.start();
+                MainActivity.this.player.open(Menu.getInstance(null, null).getUri(),
+                        MainActivity.this.mSurfaceView.getHolder().getSurface(),
+                        true);
+                MainActivity.this.player.start();
             }
         });
         menu.show();
