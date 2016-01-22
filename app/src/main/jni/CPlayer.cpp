@@ -63,13 +63,40 @@ class CThread{
 public:
     CThread(void *(*threadFunc) (void *)){mThreadFunc = threadFunc;};
     virtual void start(){
-        pthread_create(&mThread, NULL, mThreadFunc, this);
+        mCancel = false;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+        pthread_create(&_mThread, &attr, mThreadFunc, this);
+        pthread_attr_destroy(&attr);
     }
-    virtual void stop(){};
+    virtual void stop() {
+        __android_log_write(ANDROID_LOG_ERROR, "stop", "1");
+        mThreadMutex.acquire();
+        __android_log_write(ANDROID_LOG_ERROR, "stop", "2");
+        mCancel = true;
+        mThreadMutex.release();
+        __android_log_write(ANDROID_LOG_ERROR, "stop", "3");
+
+        while (pthread_kill(_mThread, 0) == 0)
+            sleep(1);
+        pthread_join(_mThread, NULL);
+        __android_log_write(ANDROID_LOG_ERROR, "stop", "4");
+    }
+
+    virtual bool isCancel() {
+        mThreadMutex.acquire();
+        bool ret = mCancel;
+        mThreadMutex.release();
+        return ret;
+    }
 
 protected:
     void *(*mThreadFunc) (void *);
-    pthread_t mThread;
+    pthread_t _mThread;
+    bool mCancel;
+private:
+    CMutex mThreadMutex;
 };
 
 
@@ -80,7 +107,7 @@ template <class B_Type> class CQueue: public std::queue<B_Type>, public CMutex {
 
 
 
-class CDemuxer : public CMutex, public CThread {
+class CDemuxer : public CThread {
 public:
     CDemuxer(const char * path, bool isNetwork = false);
     ~CDemuxer();
@@ -88,6 +115,7 @@ public:
     const AVStream* getAudioStream(){return mAudioStream != -1 ? mFormatContext->streams[mAudioStream] : NULL;};
     CQueue <AVPacket*>* getVideoQueue(){return &mVideoQueue;};
     CQueue <AVPacket*>* getAudioQueue(){return &mAudioQueue;};
+    void flush();
     bool isEof(){ return mEof;};
 
 protected:
@@ -139,15 +167,38 @@ CDemuxer::~CDemuxer(){
     avformat_close_input(&mFormatContext);
 };
 
+void CDemuxer::flush(){
+    mVideoQueue.acquire();
+    while(!mVideoQueue.empty()){
+        av_free_packet(mVideoQueue.front());
+        mVideoQueue.pop();
+    }
+    mVideoQueue.release();
+
+    mAudioQueue.acquire();
+    while(!mAudioQueue.empty()){
+        av_free_packet(mAudioQueue.front());
+        mAudioQueue.pop();
+    }
+    mAudioQueue.release();
+
+    avformat_flush(mFormatContext);
+}
+
 void* CDemuxer::fileReading(void * baseObj) {
     CDemuxer* self = (CDemuxer*) baseObj;
 
     if(self->mIsNetwork){
-        avformat_flush(self->mFormatContext);
+        self->flush();
     }
     for (;;) {
 
         for(;;) {
+            if(self->isCancel()){
+                self->flush();
+                return NULL;
+            }
+
             self->mAudioQueue.acquire();
             self->mVideoQueue.acquire();
             if(self->mVideoQueue.size() > MAX_QUEUE_SIZE ||
@@ -163,10 +214,8 @@ void* CDemuxer::fileReading(void * baseObj) {
         }
 
         AVPacket* packet = new AVPacket;
-        //self->acquire();
         if(av_read_frame(self->mFormatContext, packet) < 0){
             self->mEof = true;
-            self->release();
             delete  packet;
             break;
         }
@@ -183,10 +232,10 @@ void* CDemuxer::fileReading(void * baseObj) {
             self->mVideoQueue.release();
             continue;
         }
-        //self->release();
         // Free the packet that was allocated by av_read_frame
         //av_free_packet(&packet);
     }
+    return NULL;
 }
 
 
@@ -292,6 +341,7 @@ class CDecoder : public CThread {
 public:
     CDecoder(CDemuxer * demuxer);
     CQueue <MediaBuffer*>* getOutQueue(){return &mOutQueue;};
+    void flush();
     void setNativeWindow(ANativeWindow* nativeWindow){mNativeWindow = nativeWindow;};
 protected:
     static void * queueVideoDecoding(void * baseObj);
@@ -305,6 +355,14 @@ CDecoder::CDecoder(CDemuxer * demuxer):CThread(queueVideoDecoding) {
     mNativeWindow = NULL;
 }
 
+void CDecoder::flush() {
+    mOutQueue.acquire();
+    while(!mOutQueue.empty()){
+        mOutQueue.front()->release();
+        mOutQueue.pop();
+    }
+    mOutQueue.release();
+}
 
 
 
@@ -321,6 +379,9 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
 
 
     for (;;) {
+        if(self->isCancel()){
+            break;
+        }
         MediaBuffer *videoBuffer;
         MediaSource::ReadOptions options;
         status_t err = videoDecoder->read(&videoBuffer, &options);
@@ -340,10 +401,14 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
             //videoBuffer->release();
         }
     }
+
+    self->flush();
     //videoSource.clear();
     videoDecoder->stop();
     //videoDecoder->clear();
     client.disconnect();
+    client.disconnect();
+    return NULL;
 
 }
 
@@ -368,6 +433,10 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
     int64_t startTime = 0;
     int64_t lastPts = 0;
     for(;;){
+        if(self->isCancel()){
+            break;
+        }
+
         MediaBuffer* mediaBuffer = NULL;
         self->mInputQueue->acquire();
         if(!self->mInputQueue->empty()){
@@ -391,7 +460,7 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
             if (timeDelay <= 0) {
                 startTime = 0;
                 mediaBuffer->release();
-                __android_log_write(ANDROID_LOG_ERROR, "1", "------------------------");
+               // __android_log_write(ANDROID_LOG_ERROR, "1", "------------------------");
                 continue;
             }
 
@@ -405,6 +474,7 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
         mediaBuffer->release();
 
     }
+    return NULL;
 }
 
 
@@ -417,19 +487,25 @@ public:
         decoder->setNativeWindow(nativeWindow);
     }
     void close(){
+        __android_log_write(ANDROID_LOG_ERROR, "close()", "1");
         if(isPlaying){
             stop();
         }
+        __android_log_write(ANDROID_LOG_ERROR, "close()", "2");
         if(demuxer != NULL){
             delete demuxer;
         }
-        if(demuxer != NULL){
-            delete demuxer;
+        __android_log_write(ANDROID_LOG_ERROR, "close()", "3");
+        if(decoder != NULL){
+            delete decoder;
         }
-        if(demuxer != NULL){
-            delete demuxer;
+        __android_log_write(ANDROID_LOG_ERROR, "close()", "4");
+        if(videoRender != NULL){
+            delete videoRender;
         }
+        __android_log_write(ANDROID_LOG_ERROR, "close()", "5");
     };
+
     void start(){
         demuxer->start();
         decoder->start();
@@ -437,9 +513,9 @@ public:
         isPlaying = true;
     }
     void stop(){
-        demuxer->stop();
-        decoder->stop();
         videoRender->stop();
+        decoder->stop();
+        demuxer->stop();
         isPlaying = false;
     }
 
@@ -452,7 +528,9 @@ public:
     }
 
     ~CPlayer(){
+        __android_log_write(ANDROID_LOG_ERROR, "~CPlayer()", "1");
             close();
+        __android_log_write(ANDROID_LOG_ERROR, "~CPlayer()", "2");
     };
 private:
     CDemuxer* demuxer;
@@ -477,10 +555,15 @@ Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jstring path
     const char* filename = (env)->GetStringUTFChars(path, 0);
     ANativeWindow* nativeWindow = ANativeWindow_fromSurface(env,surface);
 
-    CPlayer* player = new CPlayer();
+    CPlayer* player = (CPlayer*) env->GetLongField(thiz, getJavaPointerToPlayer(env, thiz));
+    if(player != NULL){
+        env->SetLongField(thiz, getJavaPointerToPlayer(env, thiz), (jlong)NULL);
+        delete player;
+        __android_log_write(ANDROID_LOG_ERROR, "2", "delete playe");
+    }
+
+    player = new CPlayer();
     player->open(nativeWindow,  filename, (bool)isStream);
-
-
     env->SetLongField(thiz, getJavaPointerToPlayer(env, thiz), (jlong)player);
 
 }
@@ -489,6 +572,7 @@ void
 Java_com_ror13_sysrazplayer_CPlayer_close(JNIEnv *env, jobject thiz){
     CPlayer* player = (CPlayer*) env->GetLongField(thiz, getJavaPointerToPlayer(env, thiz));
     delete player;
+    env->SetLongField(thiz, getJavaPointerToPlayer(env, thiz), (jlong)NULL);
 }
 void
 Java_com_ror13_sysrazplayer_CPlayer_start(JNIEnv *env, jobject thiz){
