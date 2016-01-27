@@ -447,25 +447,28 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
         if(!mediaBuffer){
             continue;
         }
+        
         sp<MetaData> metaData = mediaBuffer->meta_data();
         int64_t currPts = 0;
         int64_t timeDelay;
         metaData->findInt64(kKeyTime, &currPts);
-        if(startTime == 0) {
-            lastPts = currPts;
-            startTime = getTime();
-        }else {
-            timeDelay = (currPts - lastPts) * 1000 - (getTime() - startTime);
-            lastPts = currPts;
-            if (timeDelay <= 0) {
-                startTime = 0;
-                mediaBuffer->release();
-               // __android_log_write(ANDROID_LOG_ERROR, "1", "------------------------");
-                continue;
-            }
+        if(0) {
+            if (startTime == 0) {
+                lastPts = currPts;
+                startTime = getTime();
+            } else {
+                timeDelay = (currPts - lastPts) * 1000 - (getTime() - startTime);
+                lastPts = currPts;
+                if (timeDelay <= 0) {
+                    startTime = 0;
+                    mediaBuffer->release();
+                    // __android_log_write(ANDROID_LOG_ERROR, "1", "------------------------");
+                    continue;
+                }
 
-            if (timeDelay > 0) {
-                usleep(timeDelay-10);
+                if (timeDelay > 0) {
+                    usleep(timeDelay - 10);
+                }
             }
         }
 

@@ -43,7 +43,9 @@ public class Menu extends Dialog implements View.OnClickListener{
 
         //et.setText("rtsp://10.10.25.253:554/hdmi");
         et.setText("/storage/sdcard0/Download/startrekintodarkness-usajj60sneak_h1080p.mov");
+
         //et.setText("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
+        mUri = et.getText().toString();
     }
 
     public static Menu getInstance(Context context, OnEndConfig onEndConfig){

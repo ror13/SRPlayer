@@ -1,4 +1,8 @@
 <resources>
     <string name="app_name">SysRazPlayer</string>
     <string name="title_activity_filedialog">filedialog</string>
+    <string-array name="array_rtsp_protocol_type">
+        <item>tcp</item>
+        <item>udp</item>
+    </string-array>
 </resources>
