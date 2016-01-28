@@ -24,6 +24,7 @@
 #include <media/stagefright/foundation/ALooper.h>
 #include <utils/List.h>
 #include <new>
+#include <string>
 #include <map>
 #include <mutex>
 #include <queue>
@@ -447,7 +448,7 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
         if(!mediaBuffer){
             continue;
         }
-        
+
         sp<MetaData> metaData = mediaBuffer->meta_data();
         int64_t currPts = 0;
         int64_t timeDelay;
@@ -483,30 +484,42 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
 
 class CPlayer {
 public:
-    void open(ANativeWindow* nativeWindow, const char * filename, bool isStream){
-        demuxer = new CDemuxer(filename,false);
+    enum {
+        OPT_URI = 0,
+        OPT_RTSP_PROTOCOL,
+        OPT_PACKET_BUFFER_SIZE,
+        OPT_IS_FLUSH,
+        OPT_IS_MAX_FPS,
+        OPT_IS_SKIP_PACKET
+    };
+    typedef struct {
+        std::string uri;
+        std::string rtspProtocol;
+        int packetBufferSize;
+        bool isFlush;
+        bool isMaxFps;
+        bool isSkipPacket;
+
+    } CplayerConfig;
+    void open(ANativeWindow* nativeWindow, CplayerConfig * conf){
+        demuxer = new CDemuxer(conf->uri.c_str(),false);
         decoder = new CDecoder(demuxer);
         videoRender = new CVideoRender(decoder->getOutQueue(),nativeWindow);
         decoder->setNativeWindow(nativeWindow);
     }
     void close(){
-        __android_log_write(ANDROID_LOG_ERROR, "close()", "1");
         if(isPlaying){
             stop();
         }
-        __android_log_write(ANDROID_LOG_ERROR, "close()", "2");
         if(demuxer != NULL){
             delete demuxer;
         }
-        __android_log_write(ANDROID_LOG_ERROR, "close()", "3");
         if(decoder != NULL){
             delete decoder;
         }
-        __android_log_write(ANDROID_LOG_ERROR, "close()", "4");
         if(videoRender != NULL){
             delete videoRender;
         }
-        __android_log_write(ANDROID_LOG_ERROR, "close()", "5");
     };
 
     void start(){
@@ -531,9 +544,7 @@ public:
     }
 
     ~CPlayer(){
-        __android_log_write(ANDROID_LOG_ERROR, "~CPlayer()", "1");
             close();
-        __android_log_write(ANDROID_LOG_ERROR, "~CPlayer()", "2");
     };
 private:
     CDemuxer* demuxer;
@@ -554,19 +565,39 @@ getJavaPointerToPlayer(JNIEnv *env, jobject obj){
 
 
 void
-Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jstring path, jobject surface, jboolean isStream){
-    const char* filename = (env)->GetStringUTFChars(path, 0);
+Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jobject config, jobject surface){
     ANativeWindow* nativeWindow = ANativeWindow_fromSurface(env,surface);
 
     CPlayer* player = (CPlayer*) env->GetLongField(thiz, getJavaPointerToPlayer(env, thiz));
-    if(player != NULL){
-        env->SetLongField(thiz, getJavaPointerToPlayer(env, thiz), (jlong)NULL);
+    if(player != NULL) {
+        env->SetLongField(thiz, getJavaPointerToPlayer(env, thiz), (jlong) NULL);
         delete player;
-        __android_log_write(ANDROID_LOG_ERROR, "2", "delete playe");
     }
 
+    CPlayer::CplayerConfig cplayerConfig;
+    jmethodID getValObj = env->GetMethodID(env->GetObjectClass(config), "getValObj", "(I)Ljava/lang/Object;");
+    jmethodID getValInt = env->GetMethodID(env->GetObjectClass(config), "getValInt", "(I)I");
+    jmethodID getValBool = env->GetMethodID(env->GetObjectClass(config), "getValBool", "(I)Z");
+
+    jobject uri = env->CallObjectMethod(config,getValObj,CPlayer::OPT_URI);
+    cplayerConfig.uri = (env)->GetStringUTFChars((jstring)uri, 0);
+
+    jobject rtspProtocol = env->CallObjectMethod(config,getValObj,CPlayer::OPT_RTSP_PROTOCOL);
+    cplayerConfig.rtspProtocol = (env)->GetStringUTFChars((jstring)rtspProtocol, 0);
+
+
+
+    cplayerConfig.packetBufferSize = (jint) env->CallIntMethod(config,getValInt,CPlayer::OPT_PACKET_BUFFER_SIZE);
+
+
+    cplayerConfig.isFlush = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_FLUSH);
+    cplayerConfig.isMaxFps = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_MAX_FPS);
+    cplayerConfig.isSkipPacket = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_SKIP_PACKET);
+
+    __android_log_print(ANDROID_LOG_INFO, "sometag=================----------------==", "paket size %d %d", cplayerConfig.packetBufferSize, cplayerConfig.isFlush);
+
     player = new CPlayer();
-    player->open(nativeWindow,  filename, (bool)isStream);
+    player->open(nativeWindow,  &cplayerConfig);
     env->SetLongField(thiz, getJavaPointerToPlayer(env, thiz), (jlong)player);
 
 }

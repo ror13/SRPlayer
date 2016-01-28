@@ -17,7 +17,7 @@
 #include <android/rect.h>
 extern "C" {
 jstring Java_com_ror13_sysrazplayer_CPlayer_tst(JNIEnv *env, jobject thiz);
-void Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jstring path, jobject surface, jboolean isStream);
+void Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jobject config, jobject surface);
 void Java_com_ror13_sysrazplayer_CPlayer_close(JNIEnv *env, jobject thiz);
 void Java_com_ror13_sysrazplayer_CPlayer_start(JNIEnv *env, jobject thiz);
 void Java_com_ror13_sysrazplayer_CPlayer_stop(JNIEnv *env, jobject thiz);

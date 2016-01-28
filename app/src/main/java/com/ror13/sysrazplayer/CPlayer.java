@@ -35,7 +35,7 @@ public class CPlayer extends Activity{
             public void run(){
                 SystemClock.sleep(1000);
                 Config config= Config.getInstance();
-                CPlayer.this.open(config.mUri, mSurfaceView.getHolder().getSurface(), true);
+                CPlayer.this.open(config, mSurfaceView.getHolder().getSurface());
                 CPlayer.this.start();
             }
         }).start();
@@ -87,7 +87,7 @@ public class CPlayer extends Activity{
 
     }
     public native String tst();
-    public native  void open(String path, Surface surface, boolean isStream);
+    public native  void open(Object config, Surface surface);
     public native  void close();
     public native  void start();
     public native  void stop();

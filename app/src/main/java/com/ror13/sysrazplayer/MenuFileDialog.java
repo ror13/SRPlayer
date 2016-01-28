@@ -35,7 +35,7 @@ public class MenuFileDialog extends Dialog implements View.OnClickListener{
 
 
         Config config = Config.getInstance();
-        et.setText(config.mUri);
+        et.setText(config.get(Config.OPT_URI).toString());
     }
 
     public static MenuFileDialog getInstance(Context context, OnEndConfig onEndConfig){

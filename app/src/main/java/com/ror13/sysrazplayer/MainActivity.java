@@ -49,7 +49,7 @@ public class MainActivity extends Activity  {
         });
 
         Button btnUri = (Button) findViewById(R.id.buttonUri);
-        ((TextView)findViewById(R.id.textViewUri)).setText(config.mUri);
+        ((TextView)findViewById(R.id.textViewUri)).setText(config.get(Config.OPT_URI).toString());
         btnUri.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -58,9 +58,10 @@ public class MainActivity extends Activity  {
                     @Override
                     public void onEndConfig() {
                         Config config = Config.getInstance();
-                        config.mUri = MenuFileDialog.getInstance(null, null).getUri();
+                        String uri = MenuFileDialog.getInstance(null, null).getUri();
                         TextView tUri = (TextView) findViewById(R.id.textViewUri);
-                        tUri.setText(config.mUri);
+                        tUri.setText(uri);
+                        config.put(Config.OPT_URI,uri);
                     }
                 };
 
@@ -74,7 +75,7 @@ public class MainActivity extends Activity  {
 
 
         Spinner spinRtspProtocolType = (Spinner) findViewById(R.id.spinner_rtsp_protocol_type);
-        int pos = ((ArrayAdapter)spinRtspProtocolType.getAdapter()).getPosition(config.mRtspProtocol);
+        int pos = ((ArrayAdapter)spinRtspProtocolType.getAdapter()).getPosition(config.get(Config.OPT_RTSP_PROTOCOL).toString());
         ((Spinner)findViewById(R.id.spinner_rtsp_protocol_type)).setSelection(pos);
         spinRtspProtocolType.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -85,7 +86,7 @@ public class MainActivity extends Activity  {
                 Object obj = parent.getItemAtPosition(position);
                 if (obj != null) {
                     Config config = Config.getInstance();
-                    config.mRtspProtocol = obj.toString();
+                    config.put(Config.OPT_RTSP_PROTOCOL, obj.toString());
                 }
 
             }
@@ -96,7 +97,7 @@ public class MainActivity extends Activity  {
         });
 
         Spinner spinSkipPacket = (Spinner) findViewById(R.id.spinner_packet_buffer_size);
-        pos = ((ArrayAdapter)spinSkipPacket.getAdapter()).getPosition(Integer.toString(config.mPacketBufferSize));
+        pos = ((ArrayAdapter)spinSkipPacket.getAdapter()).getPosition(Integer.toString(config.getValInt(Config.OPT_PACKET_BUFFER_SIZE)));
         ((Spinner)findViewById(R.id.spinner_packet_buffer_size)).setSelection(pos);
         //spinSkipPacket.setSelection(1,false);
         spinSkipPacket.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -108,7 +109,7 @@ public class MainActivity extends Activity  {
                 Object obj = parent.getItemAtPosition(position);
                 if (obj != null) {
                     Config config = Config.getInstance();
-                    config.mPacketBufferSize = Integer.parseInt(obj.toString());
+                    config.put(Config.OPT_PACKET_BUFFER_SIZE, Integer.parseInt(obj.toString()));
                 }
 
             }
@@ -119,32 +120,32 @@ public class MainActivity extends Activity  {
         });
 
         CheckBox cbSkipPacket = (CheckBox) findViewById(R.id.checkBoxSkipPacket);
-        cbSkipPacket.setChecked(config.mIsSkipPacket);
+        cbSkipPacket.setChecked(config.getValBool(Config.OPT_IS_SKIP_PACKET));
         cbSkipPacket.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
-                config.mIsSkipPacket = b;
+                config.put(Config.OPT_IS_SKIP_PACKET ,b);
             }
         });
 
         CheckBox cbMaxFps = (CheckBox) findViewById(R.id.checkBoxMaxFps);
-        cbMaxFps.setChecked(config.mIsMaxFps);
+        cbMaxFps.setChecked(config.getValBool(Config.OPT_IS_MAX_FPS));
         cbMaxFps.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
-                config.mIsMaxFps = b;
+                config.put(Config.OPT_IS_MAX_FPS ,b);
             }
         });
 
         CheckBox cbFlushStream = (CheckBox) findViewById(R.id.checkBoxFlushStream);
-        cbFlushStream.setChecked(config.mIsFlush);
+        cbFlushStream.setChecked(config.getValBool(Config.OPT_IS_FLUSH));
         cbFlushStream.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
-                config.mIsFlush = b;
+                config.put(Config.OPT_IS_FLUSH ,b);
             }
         });
 
@@ -154,6 +155,7 @@ public class MainActivity extends Activity  {
 
 
     }
+
 
 
 
