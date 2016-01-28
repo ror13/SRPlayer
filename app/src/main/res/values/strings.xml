@@ -5,4 +5,15 @@
         <item>tcp</item>
         <item>udp</item>
     </string-array>
+    <string-array name="array_packet_buffer_size">
+        <item>5</item>
+        <item>10</item>
+        <item>20</item>
+        <item>30</item>
+        <item>40</item>
+        <item>50</item>
+        <item>100</item>
+        <item>500</item>
+        <item>1000</item>
+    </string-array>
 </resources>

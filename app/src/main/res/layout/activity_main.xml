@@ -42,11 +42,25 @@
                 android:layout_height="33dp"
                 android:layout_gravity="center_horizontal" />
 
-            <Button
-                android:layout_width="fill_parent"
-                android:layout_height="wrap_content"
-                android:text="URI : "
-                android:id="@+id/buttonUri" />
+            <LinearLayout
+                android:orientation="horizontal"
+                android:layout_width="match_parent"
+                android:layout_height="62dp"
+                android:layout_gravity="center_horizontal"
+                android:gravity="center_vertical">
+
+                <Button
+                    android:layout_width="70dp"
+                    android:layout_height="wrap_content"
+                    android:text="URI : "
+                    android:id="@+id/buttonUri" />
+
+                <TextView
+                    android:layout_width="fill_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?android:attr/textAppearanceSmall"
+                    android:id="@+id/textViewUri" />
+            </LinearLayout>
 
             <LinearLayout
                 android:orientation="horizontal"
@@ -57,7 +71,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
                     android:textAppearance="?android:attr/textAppearanceMedium"
-                    android:text="Using rtsp protocol type: "
+                    android:text=" Using rtsp protocol type: "
                     android:id="@+id/textView"
                     android:gravity="fill_vertical" />
 
@@ -89,16 +103,16 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textAppearance="?android:attr/textAppearanceMedium"
-                    android:text="p-acket bufer size"
+                    android:text=" packet bufer size : "
                     android:id="@+id/textView2" />
 
-                <EditText
-                    android:layout_width="wrap_content"
+                <Spinner
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:ems="10"
-                    android:id="@+id/editText2"
-                    android:layout_weight="1" />
+                    android:id="@+id/spinner_packet_buffer_size"
+                    android:layout_gravity="right"
+                    android:entries="@array/array_packet_buffer_size"
+                    />
 
             </LinearLayout>
 

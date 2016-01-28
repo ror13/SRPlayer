@@ -1,122 +1,171 @@
 package com.ror13.sysrazplayer;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.res.Resources;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.SurfaceHolder;
+import android.view.KeyEvent;
+import android.view.MenuItem;
 import android.view.SurfaceView;
-import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.Window;
+import android.widget.AdapterView;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.widget.ArrayAdapter;
+import android.widget.Toast;
+
+import org.w3c.dom.Text;
 
 public class MainActivity extends Activity  {
 
-    public static final String CUSTOM_EVENT= "main-action-event";
-    SurfaceView mSurfaceView;
-    Menu menu;
-    CPlayer player;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-        player = new CPlayer();
-        mSurfaceView = new SurfaceView(this);
+
+        Config config = Config.getInstance();
+        //Resources res = getResources();
 
         setContentView(R.layout.activity_main);
-        setContentView(mSurfaceView);
+        //setContentView(mSurfaceView);
 
-        menu =  Menu.getInstance(this, new OnEndConfig() {
-            @Override
-            public void onEndConfig() {
-                /*SysRazPlayer player = new SysRazPlayer();
-                player.setPath();
-                player.setSurface(MainActivity.this.mSurfaceView.getHolder().getSurface());
-                player.start();
-                MainActivity.this.player.open(Menu.getInstance(null, null).getUri(),
-                        MainActivity.this.mSurfaceView.getHolder().getSurface(),
-                        true);
-                MainActivity.this.player.start();
-                */
-                playVideo();
-            }
-        });
 
-/*
+
+
         Button btnPlay = (Button) findViewById(R.id.buttonPlay);
         btnPlay.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                playVideo();
+                Intent intent = new Intent(MainActivity.this, CPlayer.class);
+                startActivity(intent);
             }
         });
-*/
+
+        Button btnUri = (Button) findViewById(R.id.buttonUri);
+        ((TextView)findViewById(R.id.textViewUri)).setText(config.mUri);
+        btnUri.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                OnEndConfig onEnd = new OnEndConfig() {
+                    @Override
+                    public void onEndConfig() {
+                        Config config = Config.getInstance();
+                        config.mUri = MenuFileDialog.getInstance(null, null).getUri();
+                        TextView tUri = (TextView) findViewById(R.id.textViewUri);
+                        tUri.setText(config.mUri);
+                    }
+                };
+
+                MenuFileDialog menu = MenuFileDialog.getInstance(MainActivity.this, onEnd);
+                menu.show();
+
+
+            }
+        });
 
 
 
-        menu.show();
+        Spinner spinRtspProtocolType = (Spinner) findViewById(R.id.spinner_rtsp_protocol_type);
+        int pos = ((ArrayAdapter)spinRtspProtocolType.getAdapter()).getPosition(config.mRtspProtocol);
+        ((Spinner)findViewById(R.id.spinner_rtsp_protocol_type)).setSelection(pos);
+        spinRtspProtocolType.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                parent.getItemAtPosition(position);
+
+                Object obj = parent.getItemAtPosition(position);
+                if (obj != null) {
+                    Config config = Config.getInstance();
+                    config.mRtspProtocol = obj.toString();
+                }
+
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> arg0) {
+            }
+        });
+
+        Spinner spinSkipPacket = (Spinner) findViewById(R.id.spinner_packet_buffer_size);
+        pos = ((ArrayAdapter)spinSkipPacket.getAdapter()).getPosition(Integer.toString(config.mPacketBufferSize));
+        ((Spinner)findViewById(R.id.spinner_packet_buffer_size)).setSelection(pos);
+        //spinSkipPacket.setSelection(1,false);
+        spinSkipPacket.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                parent.getItemAtPosition(position);
+
+                Object obj = parent.getItemAtPosition(position);
+                if (obj != null) {
+                    Config config = Config.getInstance();
+                    config.mPacketBufferSize = Integer.parseInt(obj.toString());
+                }
+
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> arg0) {
+            }
+        });
+
+        CheckBox cbSkipPacket = (CheckBox) findViewById(R.id.checkBoxSkipPacket);
+        cbSkipPacket.setChecked(config.mIsSkipPacket);
+        cbSkipPacket.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                Config config = Config.getInstance();
+                config.mIsSkipPacket = b;
+            }
+        });
+
+        CheckBox cbMaxFps = (CheckBox) findViewById(R.id.checkBoxMaxFps);
+        cbMaxFps.setChecked(config.mIsMaxFps);
+        cbMaxFps.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                Config config = Config.getInstance();
+                config.mIsMaxFps = b;
+            }
+        });
+
+        CheckBox cbFlushStream = (CheckBox) findViewById(R.id.checkBoxFlushStream);
+        cbFlushStream.setChecked(config.mIsFlush);
+        cbFlushStream.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                Config config = Config.getInstance();
+                config.mIsFlush = b;
+            }
+        });
+
+
+
+
+
+
     }
 
-    public void playVideo(){
-        //MainActivity.this.player.open(MainActivity.this.menu.getUri(),
-        Log.d("JAVA", "0");
-        setContentView(NULL);
-        setContentView(mSurfaceView);
 
-        Log.d("JAVA", "1");
-        player.open("/storage/sdcard0/Download/startrekintodarkness-usajj60sneak_h1080p.mov",
-                mSurfaceView.getHolder().getSurface(),
-                true);
-        Log.d("JAVA", "2");
-        player.start();
-        Log.d("JAVA", "3");
 
-        Log.d("JAVA", "4");
+    @Override
+    public void onBackPressed() {
+        // do nothing because you don't want them to leave when it's pressed
     }
 
     @Override
     protected void onDestroy() {
         // Unregister since the activity is about to be closed.
         super.onDestroy();
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        super.onTouchEvent(event);
-        if(event.getAction() != MotionEvent.ACTION_UP){
-            return true;
-        }
-
-        DialogInterface.OnClickListener dialogClickListener = new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                switch (which){
-                    case DialogInterface.BUTTON_POSITIVE:
-                        MainActivity.this.setContentView(R.layout.activity_main);
-                        //Yes button clicked
-                        break;
-
-                    case DialogInterface.BUTTON_NEGATIVE:
-                        //No button clicked
-                        dialog.cancel();
-                        break;
-                }
-            }
-        };
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setMessage("Stop play video?").setPositiveButton("Yes", dialogClickListener)
-                .setNegativeButton("No", dialogClickListener).show();
-
-        //menu.show();
-        //SurfaceView surfaceView = (SurfaceView) findViewById(R.id.surface);
-
-        //player.run("/storage/sdcard0/Download/big_buck_bunny_720p_50mb.mp4", mSurfaceView.getHolder().getSurface());
-        return true;
     }
 
 

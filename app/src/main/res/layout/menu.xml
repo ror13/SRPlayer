@@ -14,20 +14,30 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
         android:minHeight="100dp"
-        android:measureWithLargestChild="true">
+        android:measureWithLargestChild="true"
+        android:weightSum="1"
+        android:gravity="center_horizontal">
 
         <Button
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="open FIle"
-            android:id="@+id/open"
-            android:enabled="true" />
+            android:text="Ok"
+            android:id="@+id/menu_ok"
+            android:layout_weight="0.29" />
 
         <Button
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="play"
-            android:id="@+id/play"/>
+            android:text="Cancel"
+            android:id="@+id/menu_cancel"
+            android:layout_weight="0.29" />
+
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Open file"
+            android:id="@+id/menu_open_file"
+            android:layout_weight="0.29" />
 
     </TableRow>
 
