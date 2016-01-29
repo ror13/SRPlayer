@@ -130,6 +130,13 @@
                 android:id="@+id/checkBoxFlushStream"
                 android:checked="false" />
 
+            <CheckBox
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Play video on a loop"
+                android:id="@+id/checkBoxLoopPlaying"
+                android:checked="false" />
+
         </LinearLayout>
     </ScrollView>
 

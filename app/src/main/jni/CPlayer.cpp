@@ -27,7 +27,7 @@
 #include <string>
 #include <map>
 #include <mutex>
-#include <queue>
+#include <deque>
 #include <tuple>
 
 extern "C" {
@@ -39,7 +39,7 @@ extern "C" {
 
 }
 
-#define MAX_QUEUE_SIZE 10
+#define kKeyTimePTS 666
 #define NATIVE_WINDOW_BUFFER_COUNT 1
 
 using namespace android;
@@ -72,17 +72,13 @@ public:
         pthread_attr_destroy(&attr);
     }
     virtual void stop() {
-        __android_log_write(ANDROID_LOG_ERROR, "stop", "1");
         mThreadMutex.acquire();
-        __android_log_write(ANDROID_LOG_ERROR, "stop", "2");
         mCancel = true;
         mThreadMutex.release();
-        __android_log_write(ANDROID_LOG_ERROR, "stop", "3");
 
         while (pthread_kill(_mThread, 0) == 0)
-            sleep(1);
+            usleep(10);
         pthread_join(_mThread, NULL);
-        __android_log_write(ANDROID_LOG_ERROR, "stop", "4");
     }
 
     virtual bool isCancel() {
@@ -102,7 +98,7 @@ private:
 
 
 
-template <class B_Type> class CQueue: public std::queue<B_Type>, public CMutex {
+template <class B_Type> class CQueue: public std::deque<B_Type>, public CMutex {
 };
 
 
@@ -110,12 +106,16 @@ template <class B_Type> class CQueue: public std::queue<B_Type>, public CMutex {
 
 class CDemuxer : public CThread {
 public:
-    CDemuxer(const char * path, bool isNetwork = false);
+    CDemuxer();
     ~CDemuxer();
-    const AVStream* getVideoStream(){return mVideoStream != -1 ? mFormatContext->streams[mVideoStream] : NULL;};
-    const AVStream* getAudioStream(){return mAudioStream != -1 ? mFormatContext->streams[mAudioStream] : NULL;};
+    void openFile(const char * path);
+    void closeFile();
+    const AVStream* getVideoStream(){return mVideoStream != -1 ? mFormatContext->streams[mVideoStream] : NULL;}
+    const AVStream* getAudioStream(){return mAudioStream != -1 ? mFormatContext->streams[mAudioStream] : NULL;}
     CQueue <AVPacket*>* getVideoQueue(){return &mVideoQueue;};
     CQueue <AVPacket*>* getAudioQueue(){return &mAudioQueue;};
+    void configure(bool isLoop = false, bool isSkipPacket = false, unsigned int packetBufferSize = 10, const char * rtspProtocolType = "tcp");
+    void setFlushOnOpen(bool flushOnOpen){mFlushOnOpen = flushOnOpen;}
     void flush();
     bool isEof(){ return mEof;};
 
@@ -128,27 +128,56 @@ protected:
     CQueue <AVPacket*> mVideoQueue,
                          mAudioQueue;
     pthread_t mThread;
-    bool mIsNetwork;
     bool mEof;
+    bool mIsSkipPacket;
+    unsigned int mPacketBufferSize;
+    std::string  mRtspProtocolType;
+    bool mFlushOnOpen;
+    bool mIsLoop;
+    AVBitStreamFilterContext* mConverter;
 };
 
 
-CDemuxer::CDemuxer(const char * path, bool isNetwork):CThread(fileReading) {
+CDemuxer::CDemuxer():CThread(fileReading) {
     av_register_all();
     mVideoStream = -1;
     mAudioStream = -1;
     mEof = false;
-    mFormatContext = avformat_alloc_context();
+    mFormatContext = NULL;
+    mConverter = NULL;
     avformat_network_init();
+    configure();
+}
+
+CDemuxer::~CDemuxer(){
+    flush();
+    closeFile();
+    avformat_network_deinit();
+};
 
 
+void CDemuxer::closeFile(){
+    if (mConverter) {
+        av_bitstream_filter_close(mConverter);
+        mConverter = NULL;
+    }
+    avformat_flush(mFormatContext);
+    if(mFormatContext)
+        avformat_close_input(&mFormatContext);
+    avformat_free_context(mFormatContext);
+    mFormatContext = NULL;
+
+};
+
+
+
+void CDemuxer::openFile(const char * path){
+    mFormatContext = avformat_alloc_context();
     AVDictionary *options = NULL;
-    av_dict_set(&options, "rtsp_transport", "tcp", 0);
-    //av_dict_set(&options, "thread_queue_size", "0", 0);
-    //av_dict_set(&options, "reorder_queue_size", "0", 0);
-
+    av_dict_set(&options, "rtsp_transport", mRtspProtocolType.c_str(), 0);
     avformat_open_input(&mFormatContext, path, NULL, &options);
     av_dict_free(&options);
+
     avformat_find_stream_info(mFormatContext,NULL);
 
     for (int i = 0; i < mFormatContext->nb_streams; i++) {
@@ -161,25 +190,35 @@ CDemuxer::CDemuxer(const char * path, bool isNetwork):CThread(fileReading) {
             continue;
         }
     }
-    mIsNetwork = isNetwork;
+    if(getVideoStream() && getVideoStream()->codec->codec_id == CODEC_ID_H264){
+        mConverter = av_bitstream_filter_init("h264_mp4toannexb");
+    }
+
+
+    if(mFlushOnOpen){
+        avformat_flush(mFormatContext);
+    }
 }
 
-CDemuxer::~CDemuxer(){
-    avformat_close_input(&mFormatContext);
-};
+void CDemuxer::configure(bool isLoop, bool isSkipPacket, unsigned int packetBufferSize, const char * rtspProtocolType){
+    mIsSkipPacket = isSkipPacket;
+    mPacketBufferSize = packetBufferSize;
+    mRtspProtocolType = rtspProtocolType;
+    mIsLoop = isLoop;
+}
 
 void CDemuxer::flush(){
     mVideoQueue.acquire();
     while(!mVideoQueue.empty()){
         av_free_packet(mVideoQueue.front());
-        mVideoQueue.pop();
+        mVideoQueue.pop_front();
     }
     mVideoQueue.release();
 
     mAudioQueue.acquire();
     while(!mAudioQueue.empty()){
         av_free_packet(mAudioQueue.front());
-        mAudioQueue.pop();
+        mAudioQueue.pop_front();
     }
     mAudioQueue.release();
 
@@ -189,9 +228,6 @@ void CDemuxer::flush(){
 void* CDemuxer::fileReading(void * baseObj) {
     CDemuxer* self = (CDemuxer*) baseObj;
 
-    if(self->mIsNetwork){
-        self->flush();
-    }
     for (;;) {
 
         for(;;) {
@@ -202,12 +238,23 @@ void* CDemuxer::fileReading(void * baseObj) {
 
             self->mAudioQueue.acquire();
             self->mVideoQueue.acquire();
-            if(self->mVideoQueue.size() > MAX_QUEUE_SIZE ||
-                    self->mAudioQueue.size() > MAX_QUEUE_SIZE) {
-                self->mVideoQueue.release();
-                self->mAudioQueue.release();
-                usleep(1000000 / 60);
-                continue;
+            if(self->mVideoQueue.size() > self->mPacketBufferSize ||
+                    self->mAudioQueue.size() > self->mPacketBufferSize) {
+                if(self->mIsSkipPacket){
+                    if(!self->mVideoQueue.empty()){
+                        av_free_packet(self->mVideoQueue.back());
+                        self->mVideoQueue.pop_back();
+                    }
+                    if(!self->mAudioQueue.empty()){
+                        av_free_packet(self->mAudioQueue.back());
+                        self->mAudioQueue.pop_back();
+                    }
+                }else{
+                    self->mVideoQueue.release();
+                    self->mAudioQueue.release();
+                    usleep(1000000 / 60);
+                    continue;
+                }
             }
             self->mVideoQueue.release();
             self->mAudioQueue.release();
@@ -216,25 +263,34 @@ void* CDemuxer::fileReading(void * baseObj) {
 
         AVPacket* packet = new AVPacket;
         if(av_read_frame(self->mFormatContext, packet) < 0){
-            self->mEof = true;
             delete  packet;
+            if(self->mIsLoop){
+                __android_log_write(ANDROID_LOG_ERROR, "@@@@@@@@@@@@@@@@@@@@@@", "------------------------");
+                std::string fileNmae = self->mFormatContext->filename;
+                self->closeFile();
+                self->openFile(fileNmae.c_str());
+                __android_log_write(ANDROID_LOG_ERROR, "!!!!!!!!!!!!!!!!!!!!!!", "------------------------");
+                continue;
+            }
+            self->mEof = true;
             break;
         }
         if (packet->stream_index == self->mAudioStream) {
             self->mAudioQueue.acquire();
-            //self->mAudioQueue.push(packet);
+            //self->mAudioQueue.push_back(packet);
             av_free_packet(packet);
             self->mAudioQueue.release();
             continue;
         }
         if (packet->stream_index == self->mVideoStream) {
             self->mVideoQueue.acquire();
-            self->mVideoQueue.push(packet);
+            self->mVideoQueue.push_back(packet);
+            if (self->mConverter) {
+                av_bitstream_filter_filter(self->mConverter, self->getVideoStream()->codec, NULL, &packet->data, &packet->size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
+            }
             self->mVideoQueue.release();
             continue;
         }
-        // Free the packet that was allocated by av_read_frame
-        //av_free_packet(&packet);
     }
     return NULL;
 }
@@ -243,20 +299,19 @@ void* CDemuxer::fileReading(void * baseObj) {
 
 class CustomSource : public MediaSource {
 public:
-    CustomSource(AVCodecContext * codecContext, CQueue <AVPacket*>* inputQueu) {
-        mConverter = NULL;
-        mCodecContext = codecContext;
-        mInputQueu = inputQueu;
+    CustomSource(CDemuxer * demuxer) {
+        mDemuxer = demuxer;
+        AVCodecContext* codecContext = mDemuxer->getVideoStream()->codec;
+        mInputQueu = mDemuxer->getVideoQueue();
         mFormat = new MetaData;
-        size_t bufferSize = (mCodecContext->width * mCodecContext->height * 3) / 2;
+        size_t bufferSize = (codecContext->width * codecContext->height * 3) / 2;
         mGroup.add_buffer(new MediaBuffer(bufferSize));
 
-        switch (mCodecContext->codec_id) {
+        switch (codecContext->codec_id) {
             case CODEC_ID_H264:
-                mConverter = av_bitstream_filter_init("h264_mp4toannexb");
                 mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
-                if (mCodecContext->extradata[0] == 1) {
-                    mFormat->setData(kKeyAVCC, kTypeAVCC, mCodecContext->extradata, mCodecContext->extradata_size);
+                if (codecContext->extradata[0] == 1) {
+                    mFormat->setData(kKeyAVCC, kTypeAVCC, codecContext->extradata, codecContext->extradata_size);
                 }
                 break;
             case CODEC_ID_MPEG4:
@@ -274,8 +329,8 @@ public:
             default:
                 break;
         }
-        mFormat->setInt32(kKeyWidth, mCodecContext->width);
-        mFormat->setInt32(kKeyHeight, mCodecContext->height);
+        mFormat->setInt32(kKeyWidth, codecContext->width);
+        mFormat->setInt32(kKeyHeight, codecContext->height);
     }
 
     virtual sp<MetaData> getFormat() {
@@ -302,22 +357,21 @@ public:
 
         }
         AVPacket * packet = mInputQueu->front();
-        mInputQueu->pop();
+        mInputQueu->pop_front();
         mInputQueu->release();
         //__android_log_print(ANDROID_LOG_INFO, "sometag", "paket size %d", packet->size);
-        if (mConverter) {
-            av_bitstream_filter_filter(mConverter, mCodecContext, NULL, &packet->data, &packet->size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
-        }
+
         ret = mGroup.acquire_buffer(buffer);
         if (ret == OK) {
             memcpy((*buffer)->data(), packet->data, packet->size);
             (*buffer)->set_range(0, packet->size);
             (*buffer)->meta_data()->clear();
             (*buffer)->meta_data()->setInt32(kKeyIsSyncFrame, packet->flags & AV_PKT_FLAG_KEY);
-            if(packet->pts>=0)
-                (*buffer)->meta_data()->setInt64(kKeyTime, packet->pts);
+            (*buffer)->meta_data()->setInt64(kKeyTime, 0);
+            if(packet->pts != AV_NOPTS_VALUE)
+                (*buffer)->meta_data()->setInt64(kKeyTimePTS, packet->pts);
             else
-                (*buffer)->meta_data()->setInt64(kKeyTime, 0);
+                (*buffer)->meta_data()->setInt64(kKeyTimePTS, packet->dts);
         }
         av_free_packet(packet);
         delete packet;
@@ -325,14 +379,12 @@ public:
     }
 
     virtual ~CustomSource() {
-        if (mConverter) {
-            av_bitstream_filter_close(mConverter);
-        }
+
     }
 private:
     CQueue <AVPacket*>* mInputQueu;
-    AVCodecContext *mCodecContext;
-    AVBitStreamFilterContext *mConverter;
+    CDemuxer *mDemuxer;
+
     MediaBufferGroup mGroup;
     sp<MetaData> mFormat;
 };
@@ -343,24 +395,27 @@ public:
     CDecoder(CDemuxer * demuxer);
     CQueue <MediaBuffer*>* getOutQueue(){return &mOutQueue;};
     void flush();
+    void setFlushDemuxer(bool needFlush){mIsFlushDemuxer = needFlush;};
     void setNativeWindow(ANativeWindow* nativeWindow){mNativeWindow = nativeWindow;};
 protected:
     static void * queueVideoDecoding(void * baseObj);
     CDemuxer * mDemuxer;
     ANativeWindow * mNativeWindow;
     CQueue <MediaBuffer*> mOutQueue;
+    bool mIsFlushDemuxer;
 };
 
 CDecoder::CDecoder(CDemuxer * demuxer):CThread(queueVideoDecoding) {
     mDemuxer = demuxer;
     mNativeWindow = NULL;
+    mIsFlushDemuxer = false;
 }
 
 void CDecoder::flush() {
     mOutQueue.acquire();
     while(!mOutQueue.empty()){
         mOutQueue.front()->release();
-        mOutQueue.pop();
+        mOutQueue.pop_front();
     }
     mOutQueue.release();
 }
@@ -372,12 +427,14 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
     CDecoder * self = (CDecoder*) baseObj;
     OMXClient client;
     client.connect();
-    sp<MediaSource> videoSource = new CustomSource(self->mDemuxer->getVideoStream()->codec, self->mDemuxer->getVideoQueue());
+    sp<MediaSource> videoSource = new CustomSource(self->mDemuxer);
     sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), \
                false, videoSource, NULL, OMXCodec::kOnlySubmitOneInputBufferAtOneTime, self->mNativeWindow);
-               //false, videoSource, NULL, 0, self->mNativeWindow);
     videoDecoder->start();
 
+    if(self->mIsFlushDemuxer){
+        self->mDemuxer->flush();
+    }
 
     for (;;) {
         if(self->isCancel()){
@@ -390,7 +447,7 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
             if (videoBuffer->range_length() > 0) {
 
                 self->mOutQueue.acquire();
-                self->mOutQueue.push(videoBuffer);
+                self->mOutQueue.push_back(videoBuffer);
                 self->mOutQueue.release();
 
             } else {
@@ -408,7 +465,6 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
     videoDecoder->stop();
     //videoDecoder->clear();
     client.disconnect();
-    client.disconnect();
     return NULL;
 
 }
@@ -416,16 +472,21 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
 class CVideoRender : public CThread{
 public:
     CVideoRender(CQueue <MediaBuffer*>* inputQueue, ANativeWindow * nativeWindow);
+    void setUsingPts(bool isUsingPts){mIsUsingPts = isUsingPts;}
 protected:
     static void * queueVideoRendering(void * baseObj);
     CQueue <MediaBuffer*> * mInputQueue;
     ANativeWindow * mNativeWindow;
+    bool mIsUsingPts;
 };
 
 CVideoRender::CVideoRender(CQueue <MediaBuffer*>* inputQueue, ANativeWindow * nativeWindow) :CThread(queueVideoRendering){
     mInputQueue = inputQueue;
     mNativeWindow = nativeWindow;
-    ANativeWindow_setBuffersGeometry(mNativeWindow, 1920, 1080, WINDOW_FORMAT_RGBA_8888);
+    int width =  ANativeWindow_getWidth(mNativeWindow);
+    int height = ANativeWindow_getHeight(mNativeWindow);
+    ANativeWindow_setBuffersGeometry(mNativeWindow, width, height, WINDOW_FORMAT_RGBX_8888);
+    mIsUsingPts = true;
 }
 
 void * CVideoRender::queueVideoRendering(void * baseObj){
@@ -442,7 +503,7 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
         self->mInputQueue->acquire();
         if(!self->mInputQueue->empty()){
             mediaBuffer = self->mInputQueue->front();
-            self->mInputQueue->pop();
+            self->mInputQueue->pop_front();
         }
         self->mInputQueue->release();
         if(!mediaBuffer){
@@ -452,8 +513,8 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
         sp<MetaData> metaData = mediaBuffer->meta_data();
         int64_t currPts = 0;
         int64_t timeDelay;
-        metaData->findInt64(kKeyTime, &currPts);
-        if(0) {
+        metaData->findInt64(kKeyTimePTS, &currPts);
+        if(self->mIsUsingPts) {
             if (startTime == 0) {
                 lastPts = currPts;
                 startTime = getTime();
@@ -473,7 +534,6 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
             }
         }
 
-        //native_window_set_buffers_timestamp(self->mNativeWindow, 1000 *1000 *1000);
         self->mNativeWindow->queueBuffer(self->mNativeWindow, mediaBuffer->graphicBuffer().get(),-1);
         mediaBuffer->release();
 
@@ -490,7 +550,8 @@ public:
         OPT_PACKET_BUFFER_SIZE,
         OPT_IS_FLUSH,
         OPT_IS_MAX_FPS,
-        OPT_IS_SKIP_PACKET
+        OPT_IS_SKIP_PACKET,
+        OPT_IS_LOOP_PLAYING
     };
     typedef struct {
         std::string uri;
@@ -499,12 +560,22 @@ public:
         bool isFlush;
         bool isMaxFps;
         bool isSkipPacket;
+        bool isLoopPlaying;
 
     } CplayerConfig;
     void open(ANativeWindow* nativeWindow, CplayerConfig * conf){
-        demuxer = new CDemuxer(conf->uri.c_str(),false);
+        demuxer = new CDemuxer();
+        demuxer->configure(conf->isLoopPlaying, conf->isSkipPacket, conf->packetBufferSize,conf->rtspProtocol.c_str());
+        demuxer->setFlushOnOpen(conf->isFlush);
+        demuxer->openFile(conf->uri.c_str());
+
         decoder = new CDecoder(demuxer);
+        decoder->setFlushDemuxer(conf->isFlush);
+
         videoRender = new CVideoRender(decoder->getOutQueue(),nativeWindow);
+        bool isUsingPts = !conf->isMaxFps;
+        videoRender->setUsingPts(isUsingPts);
+
         decoder->setNativeWindow(nativeWindow);
     }
     void close(){
@@ -593,8 +664,8 @@ Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jobject conf
     cplayerConfig.isFlush = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_FLUSH);
     cplayerConfig.isMaxFps = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_MAX_FPS);
     cplayerConfig.isSkipPacket = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_SKIP_PACKET);
+    cplayerConfig.isLoopPlaying = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_LOOP_PLAYING);
 
-    __android_log_print(ANDROID_LOG_INFO, "sometag=================----------------==", "paket size %d %d", cplayerConfig.packetBufferSize, cplayerConfig.isFlush);
 
     player = new CPlayer();
     player->open(nativeWindow,  &cplayerConfig);

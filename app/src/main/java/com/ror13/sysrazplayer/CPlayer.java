@@ -31,6 +31,11 @@ public class CPlayer extends Activity{
         mSurfaceView = new SurfaceView(getBaseContext());
         setContentView(mSurfaceView);
 
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
         new Thread(new Runnable() {
             public void run(){
                 SystemClock.sleep(1000);
@@ -41,7 +46,11 @@ public class CPlayer extends Activity{
         }).start();
     }
 
-
+    @Override
+    protected void onStop() {
+        super.onStop();
+        close();
+    }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {

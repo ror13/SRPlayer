@@ -125,7 +125,7 @@ public class MainActivity extends Activity  {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
-                config.put(Config.OPT_IS_SKIP_PACKET ,b);
+                config.put(Config.OPT_IS_SKIP_PACKET, b);
             }
         });
 
@@ -146,6 +146,16 @@ public class MainActivity extends Activity  {
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
                 config.put(Config.OPT_IS_FLUSH ,b);
+            }
+        });
+
+        CheckBox cbLoopPlaying = (CheckBox) findViewById(R.id.checkBoxLoopPlaying);
+        cbLoopPlaying.setChecked(config.getValBool(Config.OPT_IS_LOOP_PLAYING));
+        cbLoopPlaying.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                Config config = Config.getInstance();
+                config.put(Config.OPT_IS_LOOP_PLAYING ,b);
             }
         });
 

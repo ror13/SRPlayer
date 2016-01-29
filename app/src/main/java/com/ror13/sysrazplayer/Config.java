@@ -16,6 +16,7 @@ public class Config extends HashMap<Object,Object> {
     public static final int OPT_IS_FLUSH = 3;
     public static final int OPT_IS_MAX_FPS = 4;
     public static final int OPT_IS_SKIP_PACKET = 5;
+    public static final int OPT_IS_LOOP_PLAYING = 6;
     private static Config singleton;
     protected Config(){
 
@@ -29,6 +30,7 @@ public class Config extends HashMap<Object,Object> {
         put(OPT_IS_FLUSH,true);
         put(OPT_IS_MAX_FPS,true);
         put(OPT_IS_SKIP_PACKET, true);
+        put(OPT_IS_LOOP_PLAYING, true);
 
     }
 
