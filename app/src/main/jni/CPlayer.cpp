@@ -533,8 +533,9 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
                 }
             }
         }
-
-        self->mNativeWindow->queueBuffer(self->mNativeWindow, mediaBuffer->graphicBuffer().get(),-1);
+        if( self->mNativeWindow->queueBuffer(self->mNativeWindow, mediaBuffer->graphicBuffer().get(),-1) == 0){
+            metaData->setInt32(kKeyRendered, 1);
+        }
         mediaBuffer->release();
 
     }

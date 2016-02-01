@@ -22,7 +22,7 @@ public class Config extends HashMap<Object,Object> {
 
         //et.setText("rtsp://10.10.25.253:554/hdmi");
         String uri ="/storage/sdcard0/Download/startrekintodarkness-usajj60sneak_h1080p.mov";
-        //et.setText("rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov");
+        //String uri = "rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov";
 
         put(OPT_URI,uri);
         put(OPT_RTSP_PROTOCOL,"tcp");
