@@ -12,6 +12,7 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.Surface;
+import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.widget.EditText;
@@ -21,7 +22,7 @@ import android.widget.EditText;
  */
 
 
-public class CPlayer extends Activity{
+public class CPlayer extends Activity implements SurfaceHolder.Callback{
     SurfaceView mSurfaceView;
     public CPlayer(){
 
@@ -30,20 +31,13 @@ public class CPlayer extends Activity{
         super.onCreate(savedInstanceState);
         mSurfaceView = new SurfaceView(getBaseContext());
         setContentView(mSurfaceView);
+        mSurfaceView.getHolder().addCallback(this);
 
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        new Thread(new Runnable() {
-            public void run(){
-                SystemClock.sleep(1000);
-                Config config= Config.getInstance();
-                CPlayer.this.open(config, mSurfaceView.getHolder().getSurface());
-                CPlayer.this.start();
-            }
-        }).start();
     }
 
     @Override
@@ -84,6 +78,24 @@ public class CPlayer extends Activity{
         return true;
     }
 
+
+
+    @Override
+    public void surfaceCreated(SurfaceHolder surfaceHolder) {
+
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder surfaceHolder, int i, int i1, int i2) {
+        Config config= Config.getInstance();
+        CPlayer.this.open(config, surfaceHolder.getSurface());
+        CPlayer.this.start();
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
+
+    }
 
     long pointerToPlayer; //using from C++ code
     static {
