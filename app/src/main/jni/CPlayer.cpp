@@ -134,7 +134,6 @@ protected:
     std::string  mRtspProtocolType;
     bool mFlushOnOpen;
     bool mIsLoop;
-    AVBitStreamFilterContext* mConverter;
 };
 
 
@@ -144,7 +143,6 @@ CDemuxer::CDemuxer():CThread(fileReading) {
     mAudioStream = -1;
     mEof = false;
     mFormatContext = NULL;
-    mConverter = NULL;
     avformat_network_init();
     configure();
 }
@@ -157,10 +155,8 @@ CDemuxer::~CDemuxer(){
 
 
 void CDemuxer::closeFile(){
-    if (mConverter) {
-        av_bitstream_filter_close(mConverter);
-        mConverter = NULL;
-    }
+    mVideoStream = -1;
+    mAudioStream = -1;
     avformat_flush(mFormatContext);
     if(mFormatContext)
         avformat_close_input(&mFormatContext);
@@ -190,10 +186,6 @@ void CDemuxer::openFile(const char * path){
             continue;
         }
     }
-    if(getVideoStream() && getVideoStream()->codec->codec_id == CODEC_ID_H264){
-        mConverter = av_bitstream_filter_init("h264_mp4toannexb");
-    }
-
 
     if(mFlushOnOpen){
         avformat_flush(mFormatContext);
@@ -265,11 +257,9 @@ void* CDemuxer::fileReading(void * baseObj) {
         if(av_read_frame(self->mFormatContext, packet) < 0){
             delete  packet;
             if(self->mIsLoop){
-                __android_log_write(ANDROID_LOG_ERROR, "@@@@@@@@@@@@@@@@@@@@@@", "------------------------");
                 std::string fileNmae = self->mFormatContext->filename;
                 self->closeFile();
                 self->openFile(fileNmae.c_str());
-                __android_log_write(ANDROID_LOG_ERROR, "!!!!!!!!!!!!!!!!!!!!!!", "------------------------");
                 continue;
             }
             self->mEof = true;
@@ -285,9 +275,6 @@ void* CDemuxer::fileReading(void * baseObj) {
         if (packet->stream_index == self->mVideoStream) {
             self->mVideoQueue.acquire();
             self->mVideoQueue.push_back(packet);
-            if (self->mConverter) {
-                av_bitstream_filter_filter(self->mConverter, self->getVideoStream()->codec, NULL, &packet->data, &packet->size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
-            }
             self->mVideoQueue.release();
             continue;
         }
@@ -301,6 +288,7 @@ class CustomSource : public MediaSource {
 public:
     CustomSource(CDemuxer * demuxer) {
         mDemuxer = demuxer;
+        mConverter = NULL;
         AVCodecContext* codecContext = mDemuxer->getVideoStream()->codec;
         mInputQueu = mDemuxer->getVideoQueue();
         mFormat = new MetaData;
@@ -310,6 +298,7 @@ public:
         switch (codecContext->codec_id) {
             case CODEC_ID_H264:
                 mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
+                mConverter = av_bitstream_filter_init("h264_mp4toannexb");
                 if (codecContext->extradata[0] == 1) {
                     mFormat->setData(kKeyAVCC, kTypeAVCC, codecContext->extradata, codecContext->extradata_size);
                 }
@@ -356,15 +345,25 @@ public:
             mInputQueu->release();
 
         }
+
         AVPacket * packet = mInputQueu->front();
+        AVPacket packetOut= *packet;
+
+
         mInputQueu->pop_front();
         mInputQueu->release();
-        //__android_log_print(ANDROID_LOG_INFO, "sometag", "paket size %d", packet->size);
 
+        if (mConverter) {
+            while(!mDemuxer->getVideoStream())
+                usleep(1);
+            av_bitstream_filter_filter(mConverter, mDemuxer->getVideoStream()->codec, NULL, &packetOut.data, &packetOut.size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
+        }
+
+        //__android_log_print(ANDROID_LOG_INFO, "sometag", "paket size %d", packet->size);
         ret = mGroup.acquire_buffer(buffer);
         if (ret == OK) {
-            memcpy((*buffer)->data(), packet->data, packet->size);
-            (*buffer)->set_range(0, packet->size);
+            memcpy((*buffer)->data(), packetOut.data, packetOut.size);
+            (*buffer)->set_range(0, packetOut.size);
             (*buffer)->meta_data()->clear();
             (*buffer)->meta_data()->setInt32(kKeyIsSyncFrame, packet->flags & AV_PKT_FLAG_KEY);
             (*buffer)->meta_data()->setInt64(kKeyTime, 0);
@@ -373,13 +372,18 @@ public:
             else
                 (*buffer)->meta_data()->setInt64(kKeyTimePTS, packet->dts);
         }
+        if(packetOut.data != packet->data){
+            av_free(packetOut.data);
+        }
         av_free_packet(packet);
         delete packet;
         return ret;
     }
 
     virtual ~CustomSource() {
-
+        if (mConverter) {
+            av_bitstream_filter_close(mConverter);
+        }
     }
 private:
     CQueue <AVPacket*>* mInputQueu;
@@ -387,6 +391,9 @@ private:
 
     MediaBufferGroup mGroup;
     sp<MetaData> mFormat;
+
+    AVBitStreamFilterContext* mConverter;
+
 };
 
 
