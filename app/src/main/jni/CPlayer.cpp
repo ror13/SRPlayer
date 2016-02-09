@@ -12,11 +12,11 @@
 #endif
 
 #include "CPlayer.h"
+#include "CGlesRender.h"
 
 #include <binder/ProcessState.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/MediaBufferGroup.h>
-//#include <media/stagefright/MediaDebug.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/OMXClient.h>
 #include <media/stagefright/OMXCodec.h>
@@ -39,10 +39,14 @@ extern "C" {
 
 }
 
+
+
 #define kKeyTimePTS 666
 #define NATIVE_WINDOW_BUFFER_COUNT 1
 
 using namespace android;
+
+unsigned long GFps_GetCurFps();
 
 int64_t getTime(void) {
     struct timeval tv;
@@ -102,7 +106,12 @@ template <class B_Type> class CQueue: public std::deque<B_Type>, public CMutex {
 };
 
 
-
+typedef struct{
+    int32_t width;
+    int32_t height;
+    uint64_t pts;
+    void * data;
+}CVideoFrame;
 
 class CDemuxer : public CThread {
 public:
@@ -320,6 +329,7 @@ public:
         }
         mFormat->setInt32(kKeyWidth, codecContext->width);
         mFormat->setInt32(kKeyHeight, codecContext->height);
+        //mFormat->setInt32(kKeyColorFormat, 19);
     }
 
     virtual sp<MetaData> getFormat() {
@@ -400,7 +410,7 @@ private:
 class CDecoder : public CThread {
 public:
     CDecoder(CDemuxer * demuxer);
-    CQueue <MediaBuffer*>* getOutQueue(){return &mOutQueue;};
+    CQueue <CVideoFrame*>* getOutQueue(){return &mOutQueue;};
     void flush();
     void setFlushDemuxer(bool needFlush){mIsFlushDemuxer = needFlush;};
     void setNativeWindow(ANativeWindow* nativeWindow){mNativeWindow = nativeWindow;};
@@ -408,7 +418,7 @@ protected:
     static void * queueVideoDecoding(void * baseObj);
     CDemuxer * mDemuxer;
     ANativeWindow * mNativeWindow;
-    CQueue <MediaBuffer*> mOutQueue;
+    CQueue <CVideoFrame*> mOutQueue;
     bool mIsFlushDemuxer;
 };
 
@@ -421,7 +431,9 @@ CDecoder::CDecoder(CDemuxer * demuxer):CThread(queueVideoDecoding) {
 void CDecoder::flush() {
     mOutQueue.acquire();
     while(!mOutQueue.empty()){
-        mOutQueue.front()->release();
+        MediaBuffer* videoBuffer = (MediaBuffer*)mOutQueue.front()->data;
+        videoBuffer->release();
+        delete (mOutQueue.front());
         mOutQueue.pop_front();
     }
     mOutQueue.release();
@@ -436,8 +448,16 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
     client.connect();
     sp<MediaSource> videoSource = new CustomSource(self->mDemuxer);
     sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), \
-               false, videoSource, NULL, OMXCodec::kOnlySubmitOneInputBufferAtOneTime, self->mNativeWindow);
+               false, videoSource, NULL, OMXCodec::kIgnoreCodecSpecificData, self->mNativeWindow);
     videoDecoder->start();
+    int32_t frameWidth = 0;
+    int32_t frameHeight = 0;
+    videoSource->getFormat()->findInt32(kKeyWidth, &frameWidth);
+    videoSource->getFormat()->findInt32(kKeyHeight, &frameHeight);
+
+    int32_t colorFormat = -3;
+    videoDecoder->getFormat()->findInt32(kKeyColorFormat, &colorFormat);
+    __android_log_print(ANDROID_LOG_ERROR, "LOG_TAG", "(kKeyColorFormat, %d)",colorFormat);
 
     if(self->mIsFlushDemuxer){
         self->mDemuxer->flush();
@@ -452,9 +472,14 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
         status_t err = videoDecoder->read(&videoBuffer, &options);
         if (err == OK) {
             if (videoBuffer->range_length() > 0) {
+                CVideoFrame * frame = new CVideoFrame();
+                frame->data = videoBuffer;
+                frame->pts = 0;
+                frame->width = frameWidth;
+                frame->height = frameHeight;
 
                 self->mOutQueue.acquire();
-                self->mOutQueue.push_back(videoBuffer);
+                self->mOutQueue.push_back(frame);
                 self->mOutQueue.release();
 
             } else {
@@ -478,16 +503,22 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
 
 class CVideoRender : public CThread{
 public:
-    CVideoRender(CQueue <MediaBuffer*>* inputQueue, ANativeWindow * nativeWindow);
+    enum {
+        GLES_WINDOW,
+        NATIVE_WINDOW
+    };
+    CVideoRender(CQueue <CVideoFrame*>* inputQueue, ANativeWindow * nativeWindow);
+    void setUsingWindowType(int type){mWindowType=type;}
     void setUsingPts(bool isUsingPts){mIsUsingPts = isUsingPts;}
 protected:
     static void * queueVideoRendering(void * baseObj);
-    CQueue <MediaBuffer*> * mInputQueue;
+    CQueue <CVideoFrame*> * mInputQueue;
     ANativeWindow * mNativeWindow;
     bool mIsUsingPts;
+    int mWindowType;
 };
 
-CVideoRender::CVideoRender(CQueue <MediaBuffer*>* inputQueue, ANativeWindow * nativeWindow) :CThread(queueVideoRendering){
+CVideoRender::CVideoRender(CQueue <CVideoFrame*>* inputQueue, ANativeWindow * nativeWindow) :CThread(queueVideoRendering){
     mInputQueue = inputQueue;
     mNativeWindow = nativeWindow;
     int width =  ANativeWindow_getWidth(mNativeWindow);
@@ -498,30 +529,38 @@ CVideoRender::CVideoRender(CQueue <MediaBuffer*>* inputQueue, ANativeWindow * na
 
 void * CVideoRender::queueVideoRendering(void * baseObj){
     CVideoRender* self = (CVideoRender*) baseObj;
+    CGlesRender * glesRender = NULL;
+    if(self->mWindowType == CVideoRender::GLES_WINDOW){
+        glesRender = new CGlesRender(self->mNativeWindow);
+        glesRender->initialize(COLORSPACE::COLOR_NV12);
+    }
     //native_window_set_buffer_count(self->mNativeWindow,NATIVE_WINDOW_BUFFER_COUNT);
     int64_t startTime = 0;
     int64_t lastPts = 0;
+    int debugSize = 0;
     for(;;){
         if(self->isCancel()){
             break;
         }
 
-        MediaBuffer* mediaBuffer = NULL;
+        CVideoFrame* videoFrame = NULL;
         self->mInputQueue->acquire();
         if(!self->mInputQueue->empty()){
-            mediaBuffer = self->mInputQueue->front();
+            videoFrame = self->mInputQueue->front();
             self->mInputQueue->pop_front();
+            debugSize = self->mInputQueue->size();
         }
         self->mInputQueue->release();
-        if(!mediaBuffer){
+        if(!videoFrame){
             continue;
         }
 
-        sp<MetaData> metaData = mediaBuffer->meta_data();
-        int64_t currPts = 0;
-        int64_t timeDelay;
-        metaData->findInt64(kKeyTimePTS, &currPts);
+        MediaBuffer *videoBuffer = (MediaBuffer *)videoFrame->data;
+        sp<MetaData> metaData = videoBuffer->meta_data();
         if(self->mIsUsingPts) {
+            int64_t currPts = 0;
+            int64_t timeDelay;
+            metaData->findInt64(kKeyTimePTS, &currPts);
             if (startTime == 0) {
                 lastPts = currPts;
                 startTime = getTime();
@@ -530,8 +569,8 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
                 lastPts = currPts;
                 if (timeDelay <= 0) {
                     startTime = 0;
-                    mediaBuffer->release();
-                    // __android_log_write(ANDROID_LOG_ERROR, "1", "------------------------");
+                    videoBuffer->release();
+                    // v
                     continue;
                 }
 
@@ -540,11 +579,29 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
                 }
             }
         }
-        if( self->mNativeWindow->queueBuffer(self->mNativeWindow, mediaBuffer->graphicBuffer().get(),-1) == 0){
+
+        if(self->mWindowType == CVideoRender::NATIVE_WINDOW) {
+            self->mNativeWindow->queueBuffer(self->mNativeWindow,
+                                             videoBuffer->graphicBuffer().get(), -1);
             metaData->setInt32(kKeyRendered, 1);
         }
-        mediaBuffer->release();
+        if(self->mWindowType == CVideoRender::GLES_WINDOW){
 
+            glesRender->draw(videoBuffer->data(),videoFrame->width,videoFrame->height);
+            glesRender->swap();
+        }
+
+
+        //__android_log_print(ANDROID_LOG_INFO, "Queue size", " %d", debugSize);
+        //__android_log_print(ANDROID_LOG_INFO, "FPS", " %ld", GFps_GetCurFps());
+
+        videoBuffer->release();
+        delete  videoFrame;
+
+
+    }
+    if (glesRender){
+        delete glesRender;
     }
     return NULL;
 }
@@ -559,7 +616,9 @@ public:
         OPT_IS_FLUSH,
         OPT_IS_MAX_FPS,
         OPT_IS_SKIP_PACKET,
-        OPT_IS_LOOP_PLAYING
+        OPT_IS_LOOP_PLAYING,
+        OPT_IS_WINDOW_NATIVE,
+        OPT_IS_WINDOW_GLES,
     };
     typedef struct {
         std::string uri;
@@ -569,6 +628,8 @@ public:
         bool isMaxFps;
         bool isSkipPacket;
         bool isLoopPlaying;
+        bool isWindowNative;
+        bool isWindowGles;
 
     } CplayerConfig;
     void open(ANativeWindow* nativeWindow, CplayerConfig * conf){
@@ -583,8 +644,16 @@ public:
         videoRender = new CVideoRender(decoder->getOutQueue(),nativeWindow);
         bool isUsingPts = !conf->isMaxFps;
         videoRender->setUsingPts(isUsingPts);
+        if(conf->isWindowNative){
+            decoder->setNativeWindow(nativeWindow);
+            videoRender->setUsingWindowType(CVideoRender::NATIVE_WINDOW);
+        }
+        if(conf->isWindowGles){
+            decoder->setNativeWindow(NULL);
+            videoRender->setUsingWindowType(CVideoRender::GLES_WINDOW);
+        }
 
-        decoder->setNativeWindow(nativeWindow);
+
     }
     void close(){
         if(isPlaying){
@@ -673,6 +742,8 @@ Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jobject conf
     cplayerConfig.isMaxFps = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_MAX_FPS);
     cplayerConfig.isSkipPacket = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_SKIP_PACKET);
     cplayerConfig.isLoopPlaying = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_LOOP_PLAYING);
+    cplayerConfig.isWindowNative = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_WINDOW_NATIVE);
+    cplayerConfig.isWindowGles = (jboolean) env->CallBooleanMethod(config,getValBool,CPlayer::OPT_IS_WINDOW_GLES);
 
 
     player = new CPlayer();
@@ -738,4 +809,36 @@ Java_com_ror13_sysrazplayer_CFfmpeg_tst( JNIEnv* env, jobject thiz ){
     return (env)->NewStringUTF( "Hello from JNI !  Compiled with ABI " ABI ".");
 }
 
+}
+
+
+#include <time.h>
+
+static unsigned long FPS_ThisTime = 0;
+static unsigned long FPS_LastTime = 0;
+static unsigned long FPS_Count = 0;
+static int FPS_TimeCount = 0;
+unsigned long GTimeGet()
+{
+    unsigned long g_Time = 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC , &ts);
+    //微秒
+    g_Time = 1000000*ts.tv_sec + ts.tv_nsec/1000;
+    //毫秒
+    return g_Time / 1000;
+}
+unsigned long GFps_GetCurFps()
+{
+    if (FPS_TimeCount == 0) {
+        FPS_LastTime = GTimeGet();
+    }
+    if (++FPS_TimeCount >= 30) {
+        if (FPS_LastTime - FPS_ThisTime != 0) {
+            FPS_Count = 30000 / (FPS_LastTime - FPS_ThisTime);
+        }
+        FPS_TimeCount = 0;
+        FPS_ThisTime = FPS_LastTime;
+    }
+    return FPS_Count;
 }

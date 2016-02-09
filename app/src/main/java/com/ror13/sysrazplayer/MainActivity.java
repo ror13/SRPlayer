@@ -14,6 +14,7 @@ import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
+import android.widget.RadioButton;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.ArrayAdapter;
@@ -70,7 +71,7 @@ public class MainActivity extends Activity  {
                         String uri = MenuFileDialog.getInstance(null, null).getUri();
                         TextView tUri = (TextView) findViewById(R.id.textViewUri);
                         tUri.setText(uri);
-                        config.put(Config.OPT_URI,uri);
+                        config.put(Config.OPT_URI, uri);
                     }
                 };
 
@@ -154,7 +155,7 @@ public class MainActivity extends Activity  {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
-                config.put(Config.OPT_IS_FLUSH ,b);
+                config.put(Config.OPT_IS_FLUSH, b);
             }
         });
 
@@ -164,14 +165,30 @@ public class MainActivity extends Activity  {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
-                config.put(Config.OPT_IS_LOOP_PLAYING ,b);
+                config.put(Config.OPT_IS_LOOP_PLAYING, b);
             }
         });
 
 
+        RadioButton rbGlesRender = (RadioButton) findViewById(R.id.radioButtonGlesRender);
+        rbGlesRender.setChecked(config.getValBool(Config.OPT_IS_WINDOW_GLES));
+        rbGlesRender.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                Config config = Config.getInstance();
+                config.put(Config.OPT_IS_WINDOW_GLES, b);
+            }
+        });
 
-
-
+        RadioButton rbNativeRender = (RadioButton) findViewById(R.id.radioButtonNativeRender);
+        rbNativeRender.setChecked(config.getValBool(Config.OPT_IS_WINDOW_NATIVE));
+        rbNativeRender.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                Config config = Config.getInstance();
+                config.put(Config.OPT_IS_WINDOW_NATIVE, b);
+            }
+        });
 
     }
 

@@ -137,6 +137,33 @@
                 android:id="@+id/checkBoxLoopPlaying"
                 android:checked="false" />
 
+            <RadioGroup
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal|left">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:text=" Render video on :"
+                    android:id="@+id/textView3" />
+
+                <RadioButton
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="OpenGl ES Window"
+                    android:id="@+id/radioButtonGlesRender"
+                    android:checked="true" />
+
+                <RadioButton
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Native Window"
+                    android:id="@+id/radioButtonNativeRender"
+                    android:checked="false" />
+            </RadioGroup>
+
             <Button
                 android:layout_width="fill_parent"
                 android:layout_height="wrap_content"

@@ -17,6 +17,8 @@ public class Config extends HashMap<Object,Object> {
     public static final int OPT_IS_MAX_FPS = 4;
     public static final int OPT_IS_SKIP_PACKET = 5;
     public static final int OPT_IS_LOOP_PLAYING = 6;
+    public static final int OPT_IS_WINDOW_NATIVE= 7;
+    public static final int OPT_IS_WINDOW_GLES= 8;
     private static Config singleton;
     protected Config(){
 
@@ -32,6 +34,8 @@ public class Config extends HashMap<Object,Object> {
         put(OPT_IS_MAX_FPS,true);
         put(OPT_IS_SKIP_PACKET, true);
         put(OPT_IS_LOOP_PLAYING, true);
+        put(OPT_IS_WINDOW_NATIVE, true);
+        put(OPT_IS_WINDOW_GLES, false);
 
     }
 
