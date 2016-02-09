@@ -39,6 +39,15 @@ public class MainActivity extends Activity  {
 
 
 
+        Button btnSysConfig = (Button) findViewById(R.id.buttonSysConfig);
+        btnSysConfig.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivityForResult(new Intent(android.provider.Settings.ACTION_SETTINGS), 0);
+
+            }
+        });
+
         Button btnPlay = (Button) findViewById(R.id.buttonPlay);
         btnPlay.setOnClickListener(new View.OnClickListener() {
             @Override

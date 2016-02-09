@@ -137,6 +137,12 @@
                 android:id="@+id/checkBoxLoopPlaying"
                 android:checked="false" />
 
+            <Button
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:text="System Configure"
+                android:id="@+id/buttonSysConfig" />
+
         </LinearLayout>
     </ScrollView>
 
