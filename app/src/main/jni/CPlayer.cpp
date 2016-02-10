@@ -107,6 +107,8 @@ template <class B_Type> class CQueue: public std::deque<B_Type>, public CMutex {
 
 
 typedef struct{
+    bool isFrist;
+    int32_t colorspace;
     int32_t width;
     int32_t height;
     uint64_t pts;
@@ -329,7 +331,6 @@ public:
         }
         mFormat->setInt32(kKeyWidth, codecContext->width);
         mFormat->setInt32(kKeyHeight, codecContext->height);
-        //mFormat->setInt32(kKeyColorFormat, 19);
     }
 
     virtual sp<MetaData> getFormat() {
@@ -444,20 +445,20 @@ void CDecoder::flush() {
 
 void * CDecoder::queueVideoDecoding(void * baseObj){
     CDecoder * self = (CDecoder*) baseObj;
+    bool isFirstPacket = true;
     OMXClient client;
     client.connect();
     sp<MediaSource> videoSource = new CustomSource(self->mDemuxer);
     sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), \
-               false, videoSource, NULL, OMXCodec::kIgnoreCodecSpecificData, self->mNativeWindow);
+               false, videoSource, NULL, OMXCodec::kHardwareCodecsOnly | OMXCodec::kOnlySubmitOneInputBufferAtOneTime,
+               self->mNativeWindow);
     videoDecoder->start();
-    int32_t frameWidth = 0;
-    int32_t frameHeight = 0;
+    int32_t frameWidth = -1;
+    int32_t frameHeight = -1;
     videoSource->getFormat()->findInt32(kKeyWidth, &frameWidth);
     videoSource->getFormat()->findInt32(kKeyHeight, &frameHeight);
-
-    int32_t colorFormat = -3;
+    int32_t colorFormat = -1;
     videoDecoder->getFormat()->findInt32(kKeyColorFormat, &colorFormat);
-    __android_log_print(ANDROID_LOG_ERROR, "LOG_TAG", "(kKeyColorFormat, %d)",colorFormat);
 
     if(self->mIsFlushDemuxer){
         self->mDemuxer->flush();
@@ -473,10 +474,16 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
         if (err == OK) {
             if (videoBuffer->range_length() > 0) {
                 CVideoFrame * frame = new CVideoFrame();
+                memset(frame,0x0,sizeof(CVideoFrame));
                 frame->data = videoBuffer;
                 frame->pts = 0;
-                frame->width = frameWidth;
-                frame->height = frameHeight;
+                if(isFirstPacket) {
+                    isFirstPacket = false;
+                    frame->colorspace = colorFormat;
+                    frame->width = frameWidth;
+                    frame->height = frameHeight;
+                    frame->isFrist = true;
+                }
 
                 self->mOutQueue.acquire();
                 self->mOutQueue.push_back(frame);
@@ -508,6 +515,9 @@ public:
         NATIVE_WINDOW
     };
     CVideoRender(CQueue <CVideoFrame*>* inputQueue, ANativeWindow * nativeWindow);
+    void draw(void * data);
+    void intializeRender(int frameWidth, int frameHeight, int colorspace);
+    void desroyRender();
     void setUsingWindowType(int type){mWindowType=type;}
     void setUsingPts(bool isUsingPts){mIsUsingPts = isUsingPts;}
 protected:
@@ -527,13 +537,18 @@ CVideoRender::CVideoRender(CQueue <CVideoFrame*>* inputQueue, ANativeWindow * na
     mIsUsingPts = true;
 }
 
+
+
+
 void * CVideoRender::queueVideoRendering(void * baseObj){
     CVideoRender* self = (CVideoRender*) baseObj;
     CGlesRender * glesRender = NULL;
+    AVPixelFormat pixFmt;
+    int32_t frameWidth, frameHeight;
     if(self->mWindowType == CVideoRender::GLES_WINDOW){
         glesRender = new CGlesRender(self->mNativeWindow);
-        glesRender->initialize(COLORSPACE::COLOR_NV12);
     }
+
     //native_window_set_buffer_count(self->mNativeWindow,NATIVE_WINDOW_BUFFER_COUNT);
     int64_t startTime = 0;
     int64_t lastPts = 0;
@@ -586,14 +601,40 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
             metaData->setInt32(kKeyRendered, 1);
         }
         if(self->mWindowType == CVideoRender::GLES_WINDOW){
-
-            glesRender->draw(videoBuffer->data(),videoFrame->width,videoFrame->height);
+            if(videoFrame->isFrist){
+                frameWidth = videoFrame->width;
+                frameHeight = videoFrame->height;
+                glesRender->clear();
+                COLORSPACE colorspace;
+                switch (videoFrame->colorspace){
+                    case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
+                    case OMX_COLOR_FormatYUV420SemiPlanar:
+                        colorspace = COLORSPACE::COLOR_NV12;
+                        pixFmt = AV_PIX_FMT_NV12;
+                        break;
+                    case OMX_COLOR_FormatYCbYCr:
+                    case OMX_COLOR_FormatCbYCrY:
+                        colorspace = COLORSPACE::COLOR_YUYV;
+                        pixFmt = AV_PIX_FMT_YUYV422;
+                        break;
+                    case OMX_COLOR_FormatYUV420Planar:
+                    case OMX_COLOR_FormatYUV420PackedPlanar:
+                    default:
+                        colorspace = COLORSPACE::COLOR_YUV420P;
+                        pixFmt = AV_PIX_FMT_YUV420P;
+                        break;
+                }
+                glesRender->initialize(colorspace,frameWidth,frameHeight);
+            }
+            AVPicture picture;
+            avpicture_fill(&picture, (uint8_t*)videoBuffer->data(), pixFmt, frameWidth,frameHeight);
+            glesRender->draw((void**)picture.data);
             glesRender->swap();
         }
 
 
         //__android_log_print(ANDROID_LOG_INFO, "Queue size", " %d", debugSize);
-        //__android_log_print(ANDROID_LOG_INFO, "FPS", " %ld", GFps_GetCurFps());
+        __android_log_print(ANDROID_LOG_INFO, "FPS", " %ld", GFps_GetCurFps());
 
         videoBuffer->release();
         delete  videoFrame;
@@ -601,6 +642,7 @@ void * CVideoRender::queueVideoRendering(void * baseObj){
 
     }
     if (glesRender){
+        glesRender->clear();
         delete glesRender;
     }
     return NULL;

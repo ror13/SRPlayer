@@ -3,7 +3,9 @@
     package="com.ror13.sysrazplayer">
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_LOGS" />
     <application
+        android:hardwareAccelerated="true"
         android:launchMode="singleTask"
         android:clearTaskOnLaunch="true"
         android:stateNotNeeded="true"

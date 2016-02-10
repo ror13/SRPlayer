@@ -2,20 +2,28 @@ package com.ror13.sysrazplayer;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
 
 /**
  * Created by ror13 on 13.12.15.
@@ -90,6 +98,7 @@ public class CPlayer extends Activity implements SurfaceHolder.Callback{
         Config config= Config.getInstance();
         CPlayer.this.open(config, surfaceHolder.getSurface());
         CPlayer.this.start();
+        //Create a textView, set a random ID and position it below the most recently added view
     }
 
     @Override

@@ -14,13 +14,15 @@
 #include <GLES2/gl2ext.h>
 enum COLORSPACE{COLOR_NV12,
     COLOR_NV21,
+    COLOR_YUV420P,
     COLOR_YUYV};
 class CGlesRender {
 public:
     CGlesRender(ANativeWindow * nativeWindow);
-    void initialize(COLORSPACE colorspace);
-    void draw(void * data, int w, int h);
+    void initialize(COLORSPACE colorspace, int frameWidth, int frameHeight);
+    void draw(void ** data);
     void swap();
+    void clear();
     ~CGlesRender();
 protected:
     GLuint LoadShader(GLenum shaderType, const char* pSource);
@@ -34,13 +36,13 @@ protected:
     EGLint      width;
     EGLint      height;
 
+    int32_t mFrameWidth;
+    int32_t mFrameHeight;
+
 
     GLuint  mProgramObject;
-    GLuint  mTextureIds[2];
+    GLuint  mTextureIds[3];
     GLuint  mBufs[3];
-
-    int     mMirror;
-    int     mDisplayOrientation;
 
     COLORSPACE mColorspace;
 

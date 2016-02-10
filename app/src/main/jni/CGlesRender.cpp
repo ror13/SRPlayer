@@ -19,22 +19,6 @@ const char* pVertexShaderStr =
             v_texCoord = a_texCoord;  								\n \
         }                            								\n";
 
-
-const char* pVertexShaderStrMatrix =
-        "uniform mat4 u_MMatrix;					       				\n \
-        uniform mat4 u_VMatrix;						    			\n \
-        attribute vec4 a_position;							    	\n \
-        void main() {									    			\n \
-            gl_Position = a_position * u_MMatrix * u_VMatrix ;	\n \
-        }													   			\n";
-
-const char* pVertexShaderSimple =
-        "attribute vec4 a_position;							    	\n \
-        void main() {									    			\n \
-            gl_Position = a_position ;								\n \
-        }													   			\n";
-
-
 const char* pFragmentShaderYUYV =
         "precision highp float;										\n \
         uniform sampler2D y_texture;									\n \
@@ -89,20 +73,21 @@ const char* pFragmentShaderNV12 =
             gl_FragColor = vec4(rgb, 1);								\n \
         }																\n";
 
-const char* pFragmentShaderColor =
-        "precision mediump float;										\n \
-        uniform vec4 vColor;											\n \
-        void main()													\n \
-        {																\n \
-             gl_FragColor = vColor;									\n \
-        }																\n";
-
-const char* pFragmentShaderSimple =
-        "precision mediump float;										\n \
-        void main()													\n \
-        {																\n \
-             gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); 				\n \
-        }																\n";
+const char* pFragmentShaderYUV420P =
+                        "precision highp float; \n"
+                        "varying highp vec2 v_texCoord;\n"
+                        "uniform sampler2D y_texture;\n"
+                        "uniform sampler2D u_texture;\n"
+                        "uniform sampler2D v_texture;\n"
+                        "void main() {\n"
+                        "    highp float y = texture2D(y_texture, v_texCoord).r;\n"
+                        "    highp float u = texture2D(u_texture, v_texCoord).r - 0.5;\n"
+                        "    highp float v = texture2D(v_texture, v_texCoord).r - 0.5;\n"
+                        "    highp float r = clamp(y + 1.596 * v, 0.0, 1.0);\n"
+                        "    highp float g = clamp(y - 0.391 * u - 0.813 * v, 0.0, 1.0);\n"
+                        "    highp float b = clamp(y + 2.018 * u, 0.0, 1.0);\n"
+                        "    gl_FragColor = vec4(r,g,b,1.0);\n"
+                        "}\n";
 
 CGlesRender::CGlesRender(ANativeWindow * nativeWindow){
     // INITIALIZE EGL
@@ -164,14 +149,10 @@ CGlesRender::CGlesRender(ANativeWindow * nativeWindow){
         return;
     }
 }
-void CGlesRender::initialize(COLORSPACE colorspace){
+void CGlesRender::initialize(COLORSPACE colorspace, int frameWidth, int frameHeight){
     mColorspace = colorspace;
-    mProgramObject		= 0;
-    mMirror				= false;
-    mDisplayOrientation	= 0;
-
-
-
+    mFrameHeight = frameHeight;
+    mFrameWidth = frameWidth;
 
     // initialize GLES image ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -180,9 +161,6 @@ void CGlesRender::initialize(COLORSPACE colorspace){
     GLuint	fragmentShader;
     GLint	linked;
 
-
-
-
     vertexShader = LoadShader(GL_VERTEX_SHADER, pVertexShaderStr);
     switch (mColorspace){
         case COLOR_NV21: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderNV21);
@@ -190,6 +168,8 @@ void CGlesRender::initialize(COLORSPACE colorspace){
         case COLOR_NV12: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderNV12);
             break;
         case COLOR_YUYV: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderYUYV);
+            break;
+        case COLOR_YUV420P: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderYUV420P);
             break;
         default: LOG_ERROR("create fragmentShader failed");
 
@@ -242,29 +222,32 @@ void CGlesRender::initialize(COLORSPACE colorspace){
     //glEnable(GL_TEXTURE_2D);
 
     LOGD("glGenTextures");
+    int numTextures = 2;
+    if(mColorspace == COLOR_YUV420P){
+        numTextures = 3;
+    }
     // Textures
-    glGenTextures(2, mTextureIds);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mTextureIds[0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, mTextureIds[1]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenTextures(numTextures, mTextureIds);
+    for(int i = 0; i < numTextures; i++) {
+        glActiveTexture(GL_TEXTURE0 + i);
+        glBindTexture(GL_TEXTURE_2D, mTextureIds[i]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+
+
+
     LOGD("VBO");
 
     //VBO
     glGenBuffers(3, mBufs);
-    GLfloat vScale = 1.0;
-    GLfloat vVertices[] = { -vScale,  vScale, 0.0f, //1.0f,  // Position 0
-                            -vScale, -vScale, 0.0f, //1.0f, // Position 1
-                            vScale, -vScale, 0.0f, //1.0f, // Position 2
-                            vScale,  vScale, 0.0f, //1.0f,  // Position 3
+
+    GLfloat vVertices[] = { -1.0,  1.0, 0.0f, //1.0f,  // Position 0
+                            -1.0, -1.0, 0.0f, //1.0f, // Position 1
+                            1.0, -1.0, 0.0f, //1.0f, // Position 2
+                            1.0,  1.0, 0.0f, //1.0f,  // Position 3
     };
 
     GLfloat tCoords[] = {0.0f,  0.0f,
@@ -272,35 +255,6 @@ void CGlesRender::initialize(COLORSPACE colorspace){
                          1.0f,  1.0f,
                          1.0f,  0.0f};
 
-    int degree = 0;
-
-    while (mDisplayOrientation > degree) {
-        GLfloat temp[2];
-        degree += 90;
-        temp[0] = tCoords[0]; temp[1] = tCoords[1];
-        tCoords[0] = tCoords[2]; tCoords[1] = tCoords[3];
-        tCoords[2] = tCoords[4]; tCoords[3] = tCoords[5];
-        tCoords[4] = tCoords[6]; tCoords[5] = tCoords[7];
-        tCoords[6] = temp[0]; tCoords[7] = temp[1];
-    }
-
-    if (mDisplayOrientation == 0 || mDisplayOrientation == 180) {
-        if (mMirror == 1){
-            GLfloat temp[2];
-            LOGD("set mirror is true");
-            temp[0] = tCoords[0]; temp[1] = tCoords[2];
-            tCoords[0] = tCoords[4]; tCoords[2] = tCoords[6];
-            tCoords[4] = temp[0]; tCoords[6] = temp[1];
-        }
-    } else {
-        if (mMirror == 1){
-            GLfloat temp[2];
-            LOGD("set mirror is true");
-            temp[0] = tCoords[1]; temp[1] = tCoords[3];
-            tCoords[1] = tCoords[5]; tCoords[3] = tCoords[7];
-            tCoords[5] = temp[0]; tCoords[7] = temp[1];
-        }
-    }
 
     GLushort indexs[] = { 0, 1, 2, 0, 2, 3 };
 
@@ -318,42 +272,42 @@ void CGlesRender::initialize(COLORSPACE colorspace){
 
 }
 
-void CGlesRender::draw(void * data, int w, int h){
-/*
-    LPOPENGLES engine = (LPOPENGLES)handle;
-    if (pData == NULL) {
-        LOGE("pOffScreen == MNull");
-        return;
-    }
-*/
-    //clean
+void CGlesRender::draw(void ** data){
+
+
     glClear ( GL_COLOR_BUFFER_BIT );
-
-    //Texture -> GPU
-    if (mColorspace == COLOR_NV12 || mColorspace == COLOR_NV21) {
-        glBindTexture(GL_TEXTURE_2D, mTextureIds[0]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, w, h, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, data);
-
-        glBindTexture(GL_TEXTURE_2D, mTextureIds[1]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, w >> 1, h >> 1, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, data + w * h);
-    } else if (mColorspace == COLOR_YUYV) {
-        glBindTexture(GL_TEXTURE_2D, mTextureIds[0]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, w, h, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, data);
-
-        glBindTexture(GL_TEXTURE_2D, mTextureIds[1]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w >> 1, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    }
-    // use shader
     glUseProgram (mProgramObject);
 
-    GLuint textureUniformY = glGetUniformLocation(mProgramObject, "y_texture");
-    GLuint textureUniformU = glGetUniformLocation(mProgramObject, "uv_texture");
-
-    glBindTexture(GL_TEXTURE_2D, mTextureIds[0]);
-    glUniform1i(textureUniformY, 0);
-
-    glBindTexture(GL_TEXTURE_2D, mTextureIds[1]);
-    glUniform1i(textureUniformU, 1);
+    switch (mColorspace){
+        case COLOR_YUV420P:
+            glBindTexture(GL_TEXTURE_2D, mTextureIds[0]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, mFrameWidth, mFrameHeight, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, data[0]);
+            glUniform1i(glGetUniformLocation(mProgramObject, "y_texture"), 0);
+            glBindTexture(GL_TEXTURE_2D, mTextureIds[1]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, mFrameWidth /2, mFrameHeight/2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, data[1]);
+            glUniform1i(glGetUniformLocation(mProgramObject, "u_texture"), 1);
+            glBindTexture(GL_TEXTURE_2D, mTextureIds[2]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, mFrameWidth/2 , mFrameHeight /2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, data[2]);
+            glUniform1i(glGetUniformLocation(mProgramObject, "v_texture"), 2);
+            break;
+        case COLOR_NV12:
+        case COLOR_NV21:
+            glBindTexture(GL_TEXTURE_2D, mTextureIds[0]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, mFrameWidth, mFrameHeight, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, data[0]);
+            glUniform1i(glGetUniformLocation(mProgramObject, "y_texture"), 0);
+            glBindTexture(GL_TEXTURE_2D, mTextureIds[1]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, mFrameWidth >> 1, mFrameHeight >> 1, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, data[1]);
+            glUniform1i(glGetUniformLocation(mProgramObject, "uv_texture"), 1);
+            break;
+        case COLOR_YUYV:
+            glBindTexture(GL_TEXTURE_2D, mTextureIds[0]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, mFrameWidth, mFrameHeight, 0, GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, data[0]);
+            glUniform1i(glGetUniformLocation(mProgramObject, "y_texture"), 0);
+            glBindTexture(GL_TEXTURE_2D, mTextureIds[1]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mFrameWidth >> 1, mFrameHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data[1]);
+            glUniform1i(glGetUniformLocation(mProgramObject, "uv_texture"), 1);
+            break;
+    }
 
     glBindBuffer(GL_ARRAY_BUFFER, mBufs[0]);
     glVertexAttribPointer ( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0 );
@@ -365,14 +319,15 @@ void CGlesRender::draw(void * data, int w, int h){
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mBufs[2]);
     glDrawElements ( GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0 );
-
-
 }
 
 void CGlesRender::swap(){
     if (!eglSwapBuffers(display, surface)) {
         LOG_ERROR("eglSwapBuffers() returned error %d", 0);
     }
+}
+void CGlesRender::clear(){
+
 }
 
 GLuint CGlesRender::LoadShader(GLenum shaderType, const char* pSource)

@@ -34,8 +34,8 @@ public class Config extends HashMap<Object,Object> {
         put(OPT_IS_MAX_FPS,true);
         put(OPT_IS_SKIP_PACKET, true);
         put(OPT_IS_LOOP_PLAYING, true);
-        put(OPT_IS_WINDOW_NATIVE, true);
-        put(OPT_IS_WINDOW_GLES, false);
+        put(OPT_IS_WINDOW_NATIVE, false);
+        put(OPT_IS_WINDOW_GLES, true);
 
     }
 
