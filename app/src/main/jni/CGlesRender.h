@@ -25,13 +25,14 @@ public:
     void clear();
     ~CGlesRender();
 protected:
+    #define GL_BUFFER_ARRAY_SIZE  3
+    #define GL_TEXTURE_ARRAY_SIZE  3
     GLuint LoadShader(GLenum shaderType, const char* pSource);
 
     EGLDisplay  display;
     EGLSurface  surface;
     EGLContext  context;
     EGLConfig   config;
-    EGLint      numConfigs;
     EGLint      format;
     EGLint      width;
     EGLint      height;
@@ -39,10 +40,12 @@ protected:
     int32_t mFrameWidth;
     int32_t mFrameHeight;
 
+    GLuint	mVertexShader;
+    GLuint	mFragmentShader;
 
     GLuint  mProgramObject;
-    GLuint  mTextureIds[3];
-    GLuint  mBufs[3];
+    GLuint  mTextureIds[GL_TEXTURE_ARRAY_SIZE];
+    GLuint  mBufs[GL_BUFFER_ARRAY_SIZE];
 
     COLORSPACE mColorspace;
 

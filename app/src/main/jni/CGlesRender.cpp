@@ -92,6 +92,10 @@ const char* pFragmentShaderYUV420P =
 
 CGlesRender::CGlesRender(ANativeWindow * nativeWindow){
     // INITIALIZE EGL
+    mVertexShader = 0;
+    mFragmentShader = 0;
+
+    EGLint numConfigs;
 
     const EGLint attribs[] = {
             EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -158,19 +162,18 @@ void CGlesRender::initialize(COLORSPACE colorspace, int frameWidth, int frameHei
     // initialize GLES image ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-    GLuint	vertexShader;
-    GLuint	fragmentShader;
+
     GLint	linked;
 
-    vertexShader = LoadShader(GL_VERTEX_SHADER, pVertexShaderStr);
+    mVertexShader = LoadShader(GL_VERTEX_SHADER, pVertexShaderStr);
     switch (mColorspace){
-        case COLOR_NV21: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderNV21);
+        case COLOR_NV21: mFragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderNV21);
             break;
-        case COLOR_NV12: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderNV12);
+        case COLOR_NV12: mFragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderNV12);
             break;
-        case COLOR_YUYV: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderYUYV);
+        case COLOR_YUYV: mFragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderYUYV);
             break;
-        case COLOR_YUV420P: fragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderYUV420P);
+        case COLOR_YUV420P: mFragmentShader = LoadShader(GL_FRAGMENT_SHADER, pFragmentShaderYUV420P);
             break;
         default: LOG_ERROR("create fragmentShader failed");
 
@@ -187,8 +190,8 @@ void CGlesRender::initialize(COLORSPACE colorspace, int frameWidth, int frameHei
 
     LOGD("glAttachShader");
 
-    glAttachShader(mProgramObject, vertexShader);
-    glAttachShader(mProgramObject, fragmentShader);
+    glAttachShader(mProgramObject, mVertexShader);
+    glAttachShader(mProgramObject, mFragmentShader);
 
     LOGD("glBindAttribLocation");
     glBindAttribLocation(mProgramObject, 0, "a_position");
@@ -218,17 +221,17 @@ void CGlesRender::initialize(COLORSPACE colorspace, int frameWidth, int frameHei
         return;
     }
 
-    //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    //glEnable(GL_TEXTURE_2D);
 
-    LOGD("glGenTextures");
+    //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+
+    glGenTextures(GL_TEXTURE_ARRAY_SIZE, mTextureIds);
+
     int numTextures = 2;
     if(mColorspace == COLOR_YUV420P){
         numTextures = 3;
     }
-    // Textures
-    glGenTextures(numTextures, mTextureIds);
+
     for(int i = 0; i < numTextures; i++) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, mTextureIds[i]);
@@ -243,7 +246,7 @@ void CGlesRender::initialize(COLORSPACE colorspace, int frameWidth, int frameHei
     LOGD("VBO");
 
     //VBO
-    glGenBuffers(3, mBufs);
+    glGenBuffers(GL_BUFFER_ARRAY_SIZE, mBufs);
 
     GLfloat vVertices[] = { -1.0,  1.0, 0.0f, //1.0f,  // Position 0
                             -1.0, -1.0, 0.0f, //1.0f, // Position 1
@@ -328,7 +331,19 @@ void CGlesRender::swap(){
     }
 }
 void CGlesRender::clear(){
-
+    if(mProgramObject){
+        glDeleteProgram(mProgramObject);
+    }
+    if(mFragmentShader) {
+        glDeleteShader(mFragmentShader);
+        mFragmentShader = 0;
+    }
+    if(mVertexShader) {
+        glDeleteShader(mVertexShader);
+        mVertexShader = 0;
+    }
+    glDeleteTextures(GL_TEXTURE_ARRAY_SIZE,mTextureIds);
+    glDeleteBuffers(GL_BUFFER_ARRAY_SIZE,mBufs);
 }
 
 GLuint CGlesRender::LoadShader(GLenum shaderType, const char* pSource)
