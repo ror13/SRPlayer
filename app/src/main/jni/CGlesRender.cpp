@@ -1,7 +1,8 @@
 //
 // Created by ror13 on 2/8/16.
 //
-
+// https://android.googlesource.com/platform/frameworks/av/+/master/media/libstagefright/tests/SurfaceMediaSource_test.cpp
+// https://gist.github.com/lifuzu/9958640
 #include "CGlesRender.h"
 #include <android/log.h>
 #define LOGD(...) __android_log_print(ANDROID_LOG_INFO, "LOG_TAG", __VA_ARGS__)

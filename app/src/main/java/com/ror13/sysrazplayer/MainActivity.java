@@ -19,17 +19,19 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.ArrayAdapter;
 import android.widget.Toast;
-
 import org.w3c.dom.Text;
 
-public class MainActivity extends Activity  {
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
 
+public class MainActivity extends Activity  {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-
 
         Config config = Config.getInstance();
         //Resources res = getResources();
@@ -38,7 +40,8 @@ public class MainActivity extends Activity  {
         //setContentView(mSurfaceView);
 
 
-
+        TextView tvIp = (TextView) findViewById(R.id.textViewIp);
+        tvIp.setText(getIpAddress());
 
         Button btnSysConfig = (Button) findViewById(R.id.buttonSysConfig);
         btnSysConfig.setOnClickListener(new View.OnClickListener() {
@@ -206,5 +209,34 @@ public class MainActivity extends Activity  {
         super.onDestroy();
     }
 
+    private String getIpAddress() {
+        String ip = "Ip address : ";
+        try {
+            Enumeration<NetworkInterface> enumNetworkInterfaces = NetworkInterface
+                    .getNetworkInterfaces();
+            while (enumNetworkInterfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = enumNetworkInterfaces
+                        .nextElement();
+                Enumeration<InetAddress> enumInetAddress = networkInterface
+                        .getInetAddresses();
+                while (enumInetAddress.hasMoreElements()) {
+                    InetAddress inetAddress = enumInetAddress.nextElement();
+
+                    if (inetAddress.isSiteLocalAddress()) {
+                        ip += "" + inetAddress.getHostAddress();
+                    }
+
+                }
+
+            }
+
+        } catch (SocketException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            ip += "Something Wrong! " + e.toString() + "\n";
+        }
+
+        return ip;
+    }
 
 }

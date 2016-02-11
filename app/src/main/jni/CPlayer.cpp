@@ -860,20 +860,11 @@ static unsigned long FPS_ThisTime = 0;
 static unsigned long FPS_LastTime = 0;
 static unsigned long FPS_Count = 0;
 static int FPS_TimeCount = 0;
-unsigned long GTimeGet()
-{
-    unsigned long g_Time = 0;
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC , &ts);
-    //微秒
-    g_Time = 1000000*ts.tv_sec + ts.tv_nsec/1000;
-    //毫秒
-    return g_Time / 1000;
-}
+
 unsigned long GFps_GetCurFps()
 {
     if (FPS_TimeCount == 0) {
-        FPS_LastTime = GTimeGet();
+        FPS_LastTime = getTime()/1000;
     }
     if (++FPS_TimeCount >= 30) {
         if (FPS_LastTime - FPS_ThisTime != 0) {
