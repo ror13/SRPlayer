@@ -172,6 +172,16 @@ public class MainActivity extends Activity  {
             }
         });
 
+        CheckBox cbVideoQueue = (CheckBox) findViewById(R.id.checkBoxVideoQueue);
+        cbVideoQueue.setChecked(config.getValBool(Config.OPT_IS_VIDEO_QUEUE));
+        cbVideoQueue.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                Config config = Config.getInstance();
+                config.put(Config.OPT_IS_VIDEO_QUEUE, b);
+            }
+        });
+
 
         RadioButton rbGlesRender = (RadioButton) findViewById(R.id.radioButtonGlesRender);
         rbGlesRender.setChecked(config.getValBool(Config.OPT_IS_WINDOW_GLES));

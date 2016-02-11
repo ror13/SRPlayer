@@ -126,6 +126,13 @@
             <CheckBox
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:text="Enable Video Queu"
+                android:id="@+id/checkBoxVideoQueue"
+                android:checked="false" />
+
+            <CheckBox
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="using max frame rate"
                 android:id="@+id/checkBoxMaxFps"
                 android:checked="false" />

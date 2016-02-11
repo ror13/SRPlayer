@@ -94,7 +94,6 @@ CGlesRender::CGlesRender(ANativeWindow * nativeWindow){
     // INITIALIZE EGL
     mVertexShader = 0;
     mFragmentShader = 0;
-
     EGLint numConfigs;
 
     const EGLint attribs[] = {

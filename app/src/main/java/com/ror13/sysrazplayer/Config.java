@@ -18,7 +18,8 @@ public class Config extends HashMap<Object,Object> {
     public static final int OPT_IS_SKIP_PACKET = 5;
     public static final int OPT_IS_LOOP_PLAYING = 6;
     public static final int OPT_IS_WINDOW_NATIVE= 7;
-    public static final int OPT_IS_WINDOW_GLES= 8;
+    public static final int OPT_IS_WINDOW_GLES = 8;
+    public static final int OPT_IS_VIDEO_QUEUE = 9;
     private static Config singleton;
     protected Config(){
 
@@ -30,12 +31,13 @@ public class Config extends HashMap<Object,Object> {
         put(OPT_URI,uri);
         put(OPT_RTSP_PROTOCOL,"tcp");
         put(OPT_PACKET_BUFFER_SIZE,10);
-        put(OPT_IS_FLUSH,false);
+        put(OPT_IS_FLUSH,true);
         put(OPT_IS_MAX_FPS,true);
-        put(OPT_IS_SKIP_PACKET, false);
+        put(OPT_IS_SKIP_PACKET, true);
         put(OPT_IS_LOOP_PLAYING, true);
         put(OPT_IS_WINDOW_NATIVE, false);
         put(OPT_IS_WINDOW_GLES, true);
+        put(OPT_IS_VIDEO_QUEUE, false);
 
     }
 
