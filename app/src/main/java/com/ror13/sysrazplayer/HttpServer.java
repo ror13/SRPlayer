@@ -1,151 +1,86 @@
 package com.ror13.sysrazplayer;
 
-/**
- * Created by ror13 on 2/10/16.
- */
+import android.content.Context;
+import android.content.res.AssetManager;
+import android.net.Uri;
 import android.util.Log;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketException;
-import java.util.Enumeration;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.Map;
 
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpException;
-import org.apache.http.HttpRequest;
-import org.apache.http.HttpResponse;
-import org.apache.http.entity.ContentProducer;
-import org.apache.http.entity.EntityTemplate;
-import org.apache.http.impl.DefaultConnectionReuseStrategy;
-import org.apache.http.impl.DefaultHttpResponseFactory;
-import org.apache.http.impl.DefaultHttpServerConnection;
-import org.apache.http.params.BasicHttpParams;
-import org.apache.http.protocol.BasicHttpContext;
-import org.apache.http.protocol.BasicHttpProcessor;
-import org.apache.http.protocol.HttpContext;
-import org.apache.http.protocol.HttpRequestHandler;
-import org.apache.http.protocol.HttpRequestHandlerRegistry;
-import org.apache.http.protocol.HttpService;
-import org.apache.http.protocol.ResponseConnControl;
-import org.apache.http.protocol.ResponseContent;
-import org.apache.http.protocol.ResponseDate;
-import org.apache.http.protocol.ResponseServer;
+import fi.iki.elonen.NanoHTTPD;
 
-public class HttpServer  extends Thread {
+/**
+ * Created by ror13 on 2/10/16.
+ */
 
-    ServerSocket serverSocket;
-    Socket socket;
-    HttpService httpService;
-    BasicHttpContext basicHttpContext;
-    static final int HttpServerPORT = 8080;
-    boolean RUNNING = false;
+public class HttpServer extends NanoHTTPD {
 
-
-    HttpServer() {
-        RUNNING = true;
-        startHttpService();
-
+    public HttpServer() {
+        super(8080);
     }
+
+    public HttpServer(String hostname, int port) {
+        super(hostname, port);
+    }
+
+
 
     @Override
-    public void run() {
+    public Response serve(IHTTPSession session) {
+        Method method = session.getMethod();
+        //Log.d("session.getUri() ",session.getUri());
+        //if (!session.getUri().equals("/")) {
+        //    return newFixedLengthResponse("");
+        //}
+        String msg = "";
 
-        try {
-            serverSocket = new ServerSocket(HttpServerPORT);
-            serverSocket.setReuseAddress(true);
-
-            while (RUNNING) {
-                socket = serverSocket.accept();
-                DefaultHttpServerConnection httpServerConnection = new DefaultHttpServerConnection();
-                httpServerConnection.bind(socket, new BasicHttpParams());
-                httpService.handleRequest(httpServerConnection,
-                        basicHttpContext);
-                httpServerConnection.shutdown();
-            }
-            serverSocket.close();
-        } catch (IOException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        } catch (HttpException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
-    }
-
-    private synchronized void startHttpService() {
-        BasicHttpProcessor basicHttpProcessor = new BasicHttpProcessor();
-        basicHttpContext = new BasicHttpContext();
-
-        basicHttpProcessor.addInterceptor(new ResponseDate());
-        basicHttpProcessor.addInterceptor(new ResponseServer());
-        basicHttpProcessor.addInterceptor(new ResponseContent());
-        basicHttpProcessor.addInterceptor(new ResponseConnControl());
-
-        httpService = new HttpService(basicHttpProcessor,
-                new DefaultConnectionReuseStrategy(),
-                new DefaultHttpResponseFactory());
-
-        HttpRequestHandlerRegistry registry = new HttpRequestHandlerRegistry();
-        registry.register("/", new HttpCommandHandler());
-        httpService.setHandlerResolver(registry);
-    }
-
-    public synchronized void stopServer() {
-        RUNNING = false;
-        if (serverSocket != null) {
+        if (session.getMethod().equals(Method.GET)) {
+            Context appContext = SysRazApp.getInstance().getBaseContext();
+            AssetManager assetManager = appContext.getAssets();
             try {
-                serverSocket.close();
+                InputStream input = assetManager.open("root.html");
+                byte[] buffer = new byte[input.available()];
+                input.read(buffer);
+                input.close();
+                msg = new String(buffer);
             } catch (IOException e) {
-                // TODO Auto-generated catch block
                 e.printStackTrace();
             }
+/*
+        String msg = "<html><body><h1>Hello server</h1>\n";
+        Map<String, String> parms = session.getParms();
+        if (parms.get("username") == null) {
+            msg += "<form action='?' method='get'>\n  <p>Your name: <input type='text' name='username'></p>\n" + "</form>\n";
+        } else {
+            msg += "<p>Hello, " + parms.get("username") + "!</p>";
         }
-    }
-
-    class HttpCommandHandler implements HttpRequestHandler {
-
-
-        @Override
-        public void handle(HttpRequest request, HttpResponse response,
-                           HttpContext httpContext) throws HttpException, IOException {
-
-            Log.d("werwerwerwerwerwerwer:::",request.toString());
-
-            HttpEntity httpEntity = new EntityTemplate(
-                    new ContentProducer() {
-
-                        public void writeTo(final OutputStream outstream)
-                                throws IOException {
-                            Logcat logCat = new Logcat();
-                            OutputStreamWriter outputStreamWriter = new OutputStreamWriter(
-                                    outstream, "UTF-8");
-                            String response = "<html><head></head><body>" +
-                                    "<script type=\"text/javascript\">\n" +
-                                    "window.setTimeout(function(){ document.location.reload(true); }, 1000);\n" +
-                                    "</script>" +
-                                    logCat.getSystemLog() +
-                                    "</body></html>";
-
-                            outputStreamWriter.write(response);
-                            outputStreamWriter.flush();
-                        }
-                    });
-            response.setHeader("Content-Type", "text/html");
-            response.setEntity(httpEntity);
+        */
         }
 
-    }
+        if (session.getMethod().equals(Method.POST)) {
+            String log = new Logcat().getSystemLog();
 
+            try {
+                JSONObject jsonObj = new JSONObject();
+                jsonObj.put("log", log);
+                msg = jsonObj.toString();
+            } catch (JSONException ex) {
+                ex.printStackTrace();
+            }
+
+        }
+
+        return newFixedLengthResponse(msg + new Logcat().getSystemLog());
+    }
 }
+
 
 class Logcat{
 
@@ -154,7 +89,7 @@ class Logcat{
         StringBuilder logCat = new StringBuilder();
         logCat.append("=======update======<br>");
         try{
-            Process process = Runtime.getRuntime().exec("logcat -t 10");
+            Process process = Runtime.getRuntime().exec("logcat -d");
             BufferedReader bufferedReader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()));
             String line = "";

@@ -396,7 +396,7 @@ void CVideoRender::drawFrame(void * data){
         mRenderOpenGles->swap();
     }
     videoBuffer->release();
-    __android_log_print(ANDROID_LOG_INFO, "FPS", " %ld", GFps_GetCurFps());
+    //__android_log_print(ANDROID_LOG_INFO, "FPS", " %ld", GFps_GetCurFps());
 }
 
 void * CVideoRender::queueVideoRendering(void* baseObj){

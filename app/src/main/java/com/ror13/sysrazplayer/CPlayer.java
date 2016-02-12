@@ -32,7 +32,6 @@ import android.widget.TextView;
 
 public class CPlayer extends Activity implements SurfaceHolder.Callback{
     SurfaceView mSurfaceView;
-    HttpServer httpServer;
 
     public CPlayer(){
 
@@ -48,15 +47,13 @@ public class CPlayer extends Activity implements SurfaceHolder.Callback{
     @Override
     protected void onStart() {
         super.onStart();
-        httpServer = new HttpServer();
-        httpServer.start();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         close();
-        httpServer.stopServer();
+
     }
 
     @Override
