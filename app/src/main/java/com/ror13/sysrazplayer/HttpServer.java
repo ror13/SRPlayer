@@ -3,6 +3,8 @@ package com.ror13.sysrazplayer;
 /**
  * Created by ror13 on 2/10/16.
  */
+import android.util.Log;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -93,7 +95,7 @@ public class HttpServer  extends Thread {
                 new DefaultHttpResponseFactory());
 
         HttpRequestHandlerRegistry registry = new HttpRequestHandlerRegistry();
-        registry.register("/", new HomeCommandHandler());
+        registry.register("/", new HttpCommandHandler());
         httpService.setHandlerResolver(registry);
     }
 
@@ -109,12 +111,14 @@ public class HttpServer  extends Thread {
         }
     }
 
-    class HomeCommandHandler implements HttpRequestHandler {
+    class HttpCommandHandler implements HttpRequestHandler {
+
+
         @Override
         public void handle(HttpRequest request, HttpResponse response,
                            HttpContext httpContext) throws HttpException, IOException {
 
-
+            Log.d("werwerwerwerwerwerwer:::",request.toString());
 
             HttpEntity httpEntity = new EntityTemplate(
                     new ContentProducer() {

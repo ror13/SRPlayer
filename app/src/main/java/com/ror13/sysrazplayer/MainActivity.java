@@ -34,6 +34,7 @@ public class MainActivity extends Activity  {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
         Config config = Config.getInstance();
+        config.load();
         //Resources res = getResources();
 
         setContentView(R.layout.activity_main);
@@ -148,7 +149,7 @@ public class MainActivity extends Activity  {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
-                config.put(Config.OPT_IS_MAX_FPS ,b);
+                config.put(Config.OPT_IS_MAX_FPS, b);
             }
         });
 
@@ -200,13 +201,19 @@ public class MainActivity extends Activity  {
             public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
                 Config config = Config.getInstance();
                 config.put(Config.OPT_IS_WINDOW_NATIVE, b);
-            }
+
+           }
         });
 
     }
 
 
-
+    @Override
+    protected void onStop() {
+        super.onStop();
+        Config config = Config.getInstance();
+        config.save();
+    }
 
     @Override
     public void onBackPressed() {
