@@ -1790,7 +1790,7 @@ public abstract class NanoHTTPD {
     public static Map<String, String> mimeTypes() {
         if (MIME_TYPES == null) {
             MIME_TYPES = new HashMap<String, String>();
-            loadMimeTypes(MIME_TYPES, "META-INF/nanohttpd/default-mimetypes.properties");
+            loadMimeTypes(MIME_TYPES, "default-mimetypes.properties");
             loadMimeTypes(MIME_TYPES, "META-INF/nanohttpd/mimetypes.properties");
             if (MIME_TYPES.isEmpty()) {
                 LOG.log(Level.WARNING, "no mime types found in the classpath! please provide mimetypes.properties");

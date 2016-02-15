@@ -1,0 +1,37 @@
+<html>
+<head>
+    <script src="jquery-1.12.0.min.js"></script>
+</head>
+<body>
+<form action="/" method="post" enctype="multipart/form-data">
+  Select image to upload:
+  <input type="file" name="fileToUpload" id="fileToUpload">
+  <input type="submit" value="Upload Image" name="submit">
+</form>
+
+<div id="log" style="height: 500px; overflow-y: scroll; border: grey medium outset;" >
+
+</div>
+
+<script type="text/javascript">
+
+function update(){
+  $.post( "/", function() {
+    //alert( "success" );
+  })
+    .done(function(obj) {
+    var data = jQuery.parseJSON(obj);
+      //$('#log').append(data);
+      $('#log').html(data.log);
+    })
+    .fail(function() {
+      //alert( "error" );
+    })
+}
+
+setInterval(function(){
+    update(); // this will run after every 5 seconds
+}, 500);
+
+</script>
+</body></html>
