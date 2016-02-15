@@ -85,27 +85,15 @@ public class HttpServer extends NanoHTTPD {
                 session.parseBody(parms);
                 //System.out.println(session.getMethod() + " " + session.getParms());
                 if(parms.keySet().contains("fileToUpload")){
-                    String loaction = parms.get("fileToUpload");
-                    File tmpFile = new File( loaction);
-                    FileInputStream is =  new FileInputStream(tmpFile);
-                    byte buff[] = new byte[10];
-                    is.read(buff);
-                    System.out.println("1  " + new String(buff));
-                    is.read(buff);
-                    System.out.println("2  "  + new String(buff));
+                    String location = parms.get("fileToUpload");
+                    UpdateApp.update(location);
+                    return newFixedLengthResponse(Response.Status.NO_CONTENT, null, null, 0L );
                 }
 
-                Log.d("values", session.getParms().values().toString());
-                Log.d("keys", session.getParms().keySet().toString());
-
-                String log = null;// = new Logcat().getSystemLog();
-                try {
-                    JSONObject jsonObj = new JSONObject();
-                    jsonObj.put("log", log);
-                    msg = new ByteArrayInputStream(jsonObj.toString().getBytes());
-                } catch (JSONException ex) {
-                    ex.printStackTrace();
-                }
+                String log = new Logcat().getSystemLog();
+                JSONObject jsonObj = new JSONObject();
+                jsonObj.put("log", log);
+                msg = new ByteArrayInputStream(jsonObj.toString().getBytes());
 
             }
 
