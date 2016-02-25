@@ -32,7 +32,7 @@ LOCAL_MODULE := CPlayer_v5
 LOCAL_SRC_FILES := CPlayer.cpp CGlesRender.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include
-LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon -lGLESv1_CM -lGLESv2 -lEGL
+LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon -lGLESv1_CM -lGLESv2 -lEGL -lOpenSLES
 LOCAL_LDFLAGS += -L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI) -L$(LOCAL_PATH)/dependencies/lib
 
 #-L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)
@@ -46,7 +46,7 @@ LOCAL_SRC_FILES := CPlayer.cpp CGlesRender.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include_v4
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include
-LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon -lGLESv1_CM -lGLESv2 -lEGL
+LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon -lGLESv1_CM -lGLESv2 -lEGL -lOpenSLES
 LOCAL_LDFLAGS += -L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI) -L$(LOCAL_PATH)/dependencies/lib_v4 -L$(LOCAL_PATH)/dependencies/lib
 
 #-L$(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)

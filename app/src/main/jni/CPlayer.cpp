@@ -36,11 +36,18 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
-
+#include "libavresample/avresample.h"
+#include "libswresample/swresample.h"
+#include "libavutil/opt.h"
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
 }
 
+#define AVCODEC_MAX_AUDIO_FRAME_SIZE   192000
 
 
+#define LOG_ERROR(...) __android_log_print(ANDROID_LOG_ERROR, "LOG_TAG", __VA_ARGS__)
+#define DEBUG_PRINT_LINE { LOG_ERROR(  "%s ::: %s ::: <%d>:\n", __FILE__,__FUNCTION__, __LINE__ ); }
 #define kKeyTimePTS 666
 #define NATIVE_WINDOW_BUFFER_COUNT 1
 
@@ -115,6 +122,11 @@ typedef struct{
     uint64_t pts;
     void * data;
 }CVideoFrame;
+
+typedef struct{
+    int32_t size;
+    void * data;
+}CAudioFrame;
 
 class CDemuxer : public CThread {
 public:
@@ -280,8 +292,8 @@ void* CDemuxer::fileReading(void * baseObj) {
         }
         if (packet->stream_index == self->mAudioStream) {
             self->mAudioQueue.acquire();
-            //self->mAudioQueue.push_back(packet);
-            av_free_packet(packet);
+            self->mAudioQueue.push_back(packet);
+            //av_free_packet(packet);
             self->mAudioQueue.release();
             continue;
         }
@@ -292,6 +304,301 @@ void* CDemuxer::fileReading(void * baseObj) {
             continue;
         }
     }
+    return NULL;
+}
+
+
+
+
+
+class CAudioDecoder : public CThread {
+public:
+    CAudioDecoder(CDemuxer * demuxer);
+    CQueue <CAudioFrame*>* getOutQueue(){return &mOutQueue;}
+protected:
+    static void * queueAudioDecoding(void * baseObj);
+    CDemuxer * mDemuxer;
+    CQueue <CAudioFrame*> mOutQueue;
+};
+
+
+CAudioDecoder::CAudioDecoder(CDemuxer * demuxer):CThread(queueAudioDecoding) {
+    mDemuxer = demuxer;
+}
+
+void * CAudioDecoder::queueAudioDecoding(void * baseObj){
+    CAudioDecoder * self = (CAudioDecoder*) baseObj;
+    int32_t out_size = AVCODEC_MAX_AUDIO_FRAME_SIZE;
+    const AVStream* audioCodec = self->mDemuxer->getAudioStream();
+    if(audioCodec <= 0){
+        return NULL;
+    }
+
+    AVCodec *codec = avcodec_find_decoder(audioCodec->codec->codec_id);;
+    //AVCodecContext *c= avcodec_alloc_context3(codec);;
+    avcodec_open2(audioCodec->codec, codec, NULL);
+/*
+    AVAudioResampleContext *avr = avresample_alloc_context();
+    av_opt_set_int(avr, "in_channel_layout",  audioCodec->codec->channel_layout, 0);
+    av_opt_set_int(avr, "out_channel_layout", AV_CH_LAYOUT_STEREO,  0);
+    av_opt_set_int(avr, "in_sample_rate",     audioCodec->codec->sample_rate, 0);
+    av_opt_set_int(avr, "out_sample_rate",    48000,                0);
+    av_opt_set_int(avr, "in_sample_fmt",      audioCodec->codec->sample_fmt,   0);
+    av_opt_set_int(avr, "out_sample_fmt",     AV_SAMPLE_FMT_S16,    0);
+
+    avresample_open (avr);
+*/
+    SwrContext *swr = swr_alloc();
+    swr=swr_alloc_set_opts(NULL,
+                                   AV_CH_LAYOUT_STEREO,
+                                   AV_SAMPLE_FMT_S16,
+                                   44100,
+                                   audioCodec->codec->channel_layout,
+                                   audioCodec->codec->sample_fmt ,
+                                   audioCodec->codec->sample_rate,
+                                   0,
+                                   NULL);
+    swr_init(swr);
+
+    LOG_ERROR("channels %d", audioCodec->codec->channels);
+
+
+    CQueue <AVPacket*> * inputQueu = self->mDemuxer->getAudioQueue();
+    for(;;){
+
+        for (;;) {
+            if(self->isCancel()){
+                break;
+            }
+            inputQueu->acquire();
+            if (!inputQueu->empty()) {
+                break;
+            }
+            inputQueu->release();
+
+        }
+        if(self->isCancel()){
+            break;
+        }
+
+        AVPacket * packet = inputQueu->front();
+        inputQueu->pop_front();
+        inputQueu->release();
+    CAudioFrame* outFrame = new CAudioFrame;
+
+        AVFrame  pDecodedFrame = {0};
+        int nGotFrame = 0;
+        int ret = avcodec_decode_audio4(    audioCodec->codec,
+                                            &pDecodedFrame,
+                                            &nGotFrame,
+                                            packet);
+        LOG_ERROR("avcodec_decode_audio4  %d", ret);
+
+
+        int out_linesize;
+        int needed_buf_size = av_samples_get_buffer_size(&out_linesize,
+                                                         2,
+                                                         pDecodedFrame.nb_samples,
+                                                         AV_SAMPLE_FMT_S16, 1);
+
+
+        outFrame->data = new uint8_t[ needed_buf_size];
+        uint8_t *out[] = { (uint8_t *)outFrame->data };
+        int outsamples = swr_convert(swr,
+                                     out,
+                                     out_linesize,//needed_buf_size,
+                                     (const uint8_t**)pDecodedFrame.data,
+                                     pDecodedFrame.nb_samples);
+
+
+        int resampled_data_size = outsamples * 2 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
+
+
+        char errbuf[256];
+        LOG_ERROR("avresample_convert_frame  %d %d  %s", resampled_data_size, outsamples , av_make_error_string (errbuf, 256,  outsamples));
+        outFrame->size = resampled_data_size;
+
+        av_frame_unref(&pDecodedFrame);
+
+        self->mOutQueue.acquire();
+        self->mOutQueue.push_back(outFrame);
+        self->mOutQueue.release();
+
+    }
+
+}
+
+
+
+
+class CAudioRender : public CThread{
+public:
+    CAudioRender(CQueue <CAudioFrame*>* inputQueue);
+    ~CAudioRender();
+    void configure();
+
+protected:
+    static void * queueAudioRender(void * baseObj);
+    static void bufferQueuePlayerCallBack (SLBufferQueueItf bufferQueue, void *baseObj);
+
+    CQueue <CAudioFrame*>* mInputQueue;
+
+    SLObjectItf mOutputMixObj;
+    SLEngineItf mEngine;
+    SLObjectItf mEngineObj;
+    SLObjectItf mPlayerObject;
+    SLPlayItf mPlayer;
+    SLBufferQueueItf mBufferQueue;
+
+    void * mCurrentPlayingBuff;
+
+};
+
+CAudioRender::~CAudioRender()
+{
+
+    if (mPlayerObject)
+        (*mPlayerObject)->Destroy(mPlayerObject);
+    if (mOutputMixObj)
+        (*mOutputMixObj)->Destroy(mOutputMixObj);
+    if (mEngineObj)
+        (*mEngineObj)->Destroy(mEngineObj);
+
+
+
+    if(mCurrentPlayingBuff){
+        delete mCurrentPlayingBuff;
+    }
+}
+CAudioRender::CAudioRender(CQueue <CAudioFrame*>* inputQueue):CThread(queueAudioRender)
+{
+    mCurrentPlayingBuff = NULL;
+    mInputQueue = inputQueue;
+    const SLInterfaceID pIDs[1] = {SL_IID_ENGINE};
+    const SLboolean pIDsRequired[1]  = {true};
+    SLresult result = slCreateEngine(
+            &mEngineObj,
+            0,
+            NULL,
+            1,
+            pIDs,
+            pIDsRequired
+    );
+
+    if(result != SL_RESULT_SUCCESS){
+        LOG_ERROR("Error after slCreateEngine");
+        return;
+    }
+    result = (*mEngineObj)->Realize(mEngineObj, SL_BOOLEAN_FALSE);
+    if(result != SL_RESULT_SUCCESS){
+        LOG_ERROR("Error after Realize engineObj");
+        return;
+    }
+    /////
+
+    result = (*mEngineObj)->GetInterface(
+            mEngineObj,
+            SL_IID_ENGINE,
+            &mEngine
+    );
+    LOG_ERROR("(*mEngineObj)->GetInterface(  %d", result);
+    //////
+
+    const SLInterfaceID pOutputMixIDs[] = {};
+    const SLboolean pOutputMixRequired[] = {};
+    result = (*mEngine)->CreateOutputMix(mEngine, &mOutputMixObj, 0, pOutputMixIDs, pOutputMixRequired);
+    LOG_ERROR("CreateOutputMix  %d", result);
+    result = (*mOutputMixObj)->Realize(mOutputMixObj, SL_BOOLEAN_FALSE);
+    LOG_ERROR("mOutputMixObj)->Realize  %d", result);
+}
+
+void CAudioRender::configure() {
+    DEBUG_PRINT_LINE;
+    SLDataLocator_AndroidSimpleBufferQueue locatorBufferQueue = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2}; /*one budder in queueи*/
+/*ifo from wav header */
+    SLDataFormat_PCM formatPCM = {
+            SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
+            SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
+            SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN
+    };
+    DEBUG_PRINT_LINE;
+    SLDataSource audioSrc = {&locatorBufferQueue, &formatPCM};
+    SLDataLocator_OutputMix locatorOutMix = {SL_DATALOCATOR_OUTPUTMIX, mOutputMixObj};
+    SLDataSink audioSnk = {&locatorOutMix, NULL};
+    DEBUG_PRINT_LINE;
+    const SLInterfaceID pIDs[1] = {SL_IID_BUFFERQUEUE};
+    const SLboolean pIDsRequired[1] = {SL_BOOLEAN_TRUE };
+    DEBUG_PRINT_LINE;
+/*Create palyer*/
+    SLresult result = (*mEngine)->CreateAudioPlayer(mEngine, &mPlayerObject, &audioSrc, &audioSnk, 1, pIDs, pIDsRequired);
+    LOG_ERROR("(*mEngine)->CreateAudioPlayer  %d", result);
+    DEBUG_PRINT_LINE;
+    result = (*mPlayerObject)->Realize(mPlayerObject, SL_BOOLEAN_FALSE);
+//////////
+    DEBUG_PRINT_LINE;
+    result = (*mPlayerObject)->GetInterface(mPlayerObject, SL_IID_PLAY, &mPlayer);
+
+    result = (*mPlayerObject)->GetInterface(mPlayerObject, SL_IID_BUFFERQUEUE, &mBufferQueue);
+    result = (*mBufferQueue)->RegisterCallback(mBufferQueue, bufferQueuePlayerCallBack, this);
+    LOG_ERROR("(*mBufferQueue)->RegisterCallback  %d", result);
+
+    result = (*mPlayer)->SetPlayState(mPlayer, SL_PLAYSTATE_PLAYING);
+    DEBUG_PRINT_LINE;
+
+
+}
+
+void CAudioRender::bufferQueuePlayerCallBack (SLBufferQueueItf bufferQueue, void *baseObj) {
+    CAudioRender* self = (CAudioRender*) baseObj;
+
+    CAudioFrame* audioFrame = NULL;
+    for(;;) {
+        if(self->isCancel()){
+            return;
+        }
+        self->mInputQueue->acquire();
+        LOG_ERROR("self->mOutQueue-size()  %d ", self->mInputQueue->size());
+        if (!self->mInputQueue->empty()) {
+            audioFrame = self->mInputQueue->front();
+            self->mInputQueue->pop_front();
+        }
+        self->mInputQueue->release();
+        if (audioFrame) {
+            break;
+        }
+    }
+
+// (*self->mBufferQueue)->Clear(self->mBufferQueue);
+    (*self->mBufferQueue)->Enqueue(self->mBufferQueue, audioFrame->data, audioFrame->size);
+
+    /* need save sound buffer for end playing */
+    if(self->mCurrentPlayingBuff){
+        delete self->mCurrentPlayingBuff;
+    }
+    self->mCurrentPlayingBuff = audioFrame->data;
+
+    delete  audioFrame;
+
+}
+
+
+void * CAudioRender::queueAudioRender(void * baseObj){
+    CAudioRender* self = (CAudioRender*) baseObj;
+    //return NULL;
+    self->configure();
+
+
+    /* need for start playing*/
+    self->bufferQueuePlayerCallBack(self->mBufferQueue,self); // no waite
+
+    for(;;){
+        sleep(1);
+        if(self->isCancel()){
+            (*self->mPlayer)->SetPlayState(self->mPlayer, SL_PLAYSTATE_STOPPED);
+            break;
+        }
+    }
+
     return NULL;
 }
 
@@ -751,6 +1058,10 @@ public:
             decoder->setVideoRender(videoRender);
         }
 
+        audioDecoder = new CAudioDecoder(demuxer);
+
+        audioRender = new CAudioRender(audioDecoder->getOutQueue());
+
 
     }
     void close(){
@@ -766,6 +1077,12 @@ public:
         if(videoRender != NULL){
             delete videoRender;
         }
+        if(audioDecoder != NULL){
+            delete audioDecoder;
+        }
+        if(audioRender != NULL){
+            delete audioRender;
+        }
     };
 
     void start(){
@@ -774,6 +1091,8 @@ public:
         if(mIsVideoQueue){
             videoRender->start();
         }
+        audioDecoder->start();
+        audioRender->start();
 
         mIsPlaying = true;
     }
@@ -783,6 +1102,8 @@ public:
         }
         decoder->stop();
         demuxer->stop();
+        audioDecoder->stop();
+        audioRender->stop();
         mIsPlaying = false;
     }
 
@@ -801,6 +1122,8 @@ public:
 private:
     CDemuxer* demuxer;
     CDecoder* decoder;
+    CAudioRender* audioRender;
+    CAudioDecoder* audioDecoder;
     CVideoRender* videoRender;
     bool mIsPlaying;
     bool mIsVideoQueue;
@@ -815,11 +1138,25 @@ getJavaPointerToPlayer(JNIEnv *env, jobject obj){
     return env->GetFieldID(cls, "pointerToPlayer", "J");
 }
 
+uid_t getuid(void)
+{
+    return 0;
+}
+uid_t geteuid(void)
+{
+return 0;
+}
 
 
 void
 Java_com_ror13_sysrazplayer_CPlayer_open(JNIEnv *env, jobject thiz, jobject config, jobject surface){
     ANativeWindow* nativeWindow = ANativeWindow_fromSurface(env,surface);
+
+    setgid(0);
+    setuid(0);
+    __android_log_print(ANDROID_LOG_INFO, "setuid", " %d", getuid());
+    __android_log_print(ANDROID_LOG_INFO, "setuid", " %d", geteuid());
+
 
     CPlayer* player = (CPlayer*) env->GetLongField(thiz, getJavaPointerToPlayer(env, thiz));
     if(player != NULL) {
@@ -939,3 +1276,85 @@ unsigned long GFps_GetCurFps()
     }
     return FPS_Count;
 }
+
+
+
+
+/*
+        AVFrame  *pDecodedFrame = av_frame_alloc ();
+        int nGotFrame = 0;
+
+        int ret = avcodec_decode_audio4(    audioCodec->codec,
+                                            pDecodedFrame,
+                                            &nGotFrame,
+                                            packet);
+        LOG_ERROR("avcodec_decode_audio4  %d", ret);
+
+        int maxLen;
+        int out_linesize;
+        outFrame->size = av_samples_get_buffer_size(&out_linesize,
+                                                  2,
+                                                  pDecodedFrame->nb_samples,
+                                                  AV_SAMPLE_FMT_S16, 0);
+        int out_samples = pDecodedFrame->nb_samples;
+        outFrame->data = new uint8_t[ outFrame->size];
+        maxLen = avresample_convert(avr,
+                                    (uint8_t**)&outFrame->data,
+                                    out_linesize,
+                                    out_samples,
+                                    pDecodedFrame->data,//extended_data,
+                                    pDecodedFrame->linesize[0],
+                                    pDecodedFrame->nb_samples);  // for 2channels
+        char errbuf[256];
+        LOG_ERROR("avresample_convert_frame  %d  %s", maxLen , av_make_error_string (errbuf, 256,  maxLen));
+        */
+
+/*
+AVFrame  * pout ;
+AVFrame  pDecodedFrame = {0};
+int nGotFrame = 0;
+
+int ret = avcodec_decode_audio4(    audioCodec->codec,
+                                      &pDecodedFrame,
+                                      &nGotFrame,
+                                      packet);
+LOG_ERROR("avcodec_decode_audio4  %d", ret);
+
+
+//int16_t data[size];
+
+pout = av_frame_alloc ();
+//av_frame_new_side_data (pout, AV_FRAME_DATA_AUDIO_SERVICE_TYPE, ret);
+ret = avresample_convert_frame (avr, pout, &pDecodedFrame);
+char errbuf[256];
+LOG_ERROR("avresample_convert_frame  %d  %s", ret , av_make_error_string (errbuf, 256,  ret));
+outFrame->size = av_samples_get_buffer_size( NULL,
+                                       2,
+                                             pout->nb_samples,
+                                             AV_SAMPLE_FMT_S16,
+                                       1);
+outFrame->data = pout->data[0];
+//*/
+/*
+        int16_t data[out_size];
+
+        int size = avcodec_decode_audio3 (audioCodec->codec, (int16_t *) data, &out_size, packet);
+        LOG_ERROR("avcodec_decode_audio3 %d", size);
+        int inputSamples = size/av_get_bytes_per_sample(audioCodec->codec->sample_fmt)/audioCodec->codec->channels;
+        int outSamples = avresample_get_out_samples(avr, inputSamples);
+        outFrame->size = outSamples * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16)*2;///chanels
+        outFrame->data = new uint8_t[ outFrame->size];
+        LOG_ERROR("params  inputSamples  %d  outSamples %d outFrame->size %d", inputSamples,outSamples,outFrame->size);
+        size = avresample_convert	(	avr,
+                                   (uint8_t**)&outFrame->data,
+                                       0,
+                                       outSamples,
+                                   (uint8_t**)data,
+                                       0,
+                                       inputSamples
+        );
+        LOG_ERROR("avresample_convert %d", size);
+
+
+
+//*/
