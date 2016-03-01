@@ -29,7 +29,8 @@ include $(PREBUILT_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
 LOCAL_MODULE := CPlayer_v5
-LOCAL_SRC_FILES := CPlayer.cpp CGlesRender.cpp
+LOCAL_CFLAGS += -D__STDC_CONSTANT_MACROS
+LOCAL_SRC_FILES := CPlayer.cpp CGlesRender.cpp utils.cpp CDemuxer.cpp CAudio.cpp CVideo.cpp jni.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include
 LOCAL_LDFLAGS := -llog  -landroid  -lz -lm -lutils -lstagefright  -lffmpeg-neon -lGLESv1_CM -lGLESv2 -lEGL -lOpenSLES
@@ -42,7 +43,8 @@ include $(BUILD_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 LOCAL_ALLOW_UNDEFINED_SYMBOLS=false
 LOCAL_MODULE := CPlayer_v4
-LOCAL_SRC_FILES := CPlayer.cpp CGlesRender.cpp
+LOCAL_CFLAGS += -D__STDC_CONSTANT_MACROS
+LOCAL_SRC_FILES := CPlayer.cpp CGlesRender.cpp utils.cpp CDemuxer.cpp CAudio.cpp CVideo.cpp jni.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/ffmpeg-build/$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include_v4
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/dependencies/include

@@ -4,10 +4,8 @@
 // https://android.googlesource.com/platform/frameworks/av/+/master/media/libstagefright/tests/SurfaceMediaSource_test.cpp
 // https://gist.github.com/lifuzu/9958640
 #include "CGlesRender.h"
-#include <android/log.h>
-#define LOGD(...) __android_log_print(ANDROID_LOG_INFO, "LOG_TAG", __VA_ARGS__)
-#define LOG_ERROR(...) __android_log_print(ANDROID_LOG_ERROR, "LOG_TAG", __VA_ARGS__)
-#define LOG_INFO(...) __android_log_print(ANDROID_LOG_INFO, "LOG_TAG", __VA_ARGS__)
+#include "utils.h"
+
 
 
 const char* pVertexShaderStr =
