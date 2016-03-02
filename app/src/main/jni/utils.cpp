@@ -3,6 +3,7 @@
 //
 
 #include "utils.h"
+#include <media/stagefright/MediaBufferGroup.h>
 static unsigned long FPS_ThisTime = 0;
 static unsigned long FPS_LastTime = 0;
 static unsigned long FPS_Count = 0;
@@ -30,4 +31,42 @@ int64_t getTime(void) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (int64_t) tv.tv_sec * 1000000 + tv.tv_usec;
+}
+
+void clearCMessage(MessageType type, void* data){
+    if(data == NULL){
+        return;
+    }
+    switch(type){
+        case MessageType::AUDIO_PKT:
+        case MessageType::VIDEO_PKT:{
+            AVPacket* packet =(AVPacket*) data;
+            av_free_packet(packet);
+            delete packet;
+            break;
+        }
+        case MessageType::AUDIO_CODEC_CONFIG:
+        case MessageType::VIDEO_CODEC_CONFIG:{
+            AVCodecContext* context = (AVCodecContext*) data;
+            avcodec_free_context(&context);
+            break;
+        }
+        case MessageType::VIDEO_RENDER_CONFIG:{
+            delete data;
+            break;
+        }
+        case MessageType::VIDEO_FRAME:{
+            CVideoFrame* vf = (CVideoFrame*) data;
+            android::MediaBuffer* mediaBuffer = (android::MediaBuffer*) vf->data;
+            mediaBuffer->release();
+            delete data;
+            break;
+        }
+        case MessageType::FILE_EOF:
+            break;
+    }
+}
+
+void clearCMessage(CMessage* msg){
+    clearCMessage(msg->type, msg->data);
 }

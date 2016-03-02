@@ -3,6 +3,7 @@
 //
 
 #include "CVideo.h"
+#include "utils.h"
 
 #include <binder/ProcessState.h>
 #include <media/stagefright/MetaData.h>
@@ -16,7 +17,7 @@
 
 using namespace android;
 
-CVideoRender::CVideoRender(CQueue <CVideoFrame*>* inputQueue, ANativeWindow * nativeWindow) :CThread(queueVideoRendering){
+CVideoRender::CVideoRender(CQueue <CMessage>* inputQueue, ANativeWindow * nativeWindow) :CThread(queueVideoRendering){
     mInputQueue = inputQueue;
     mNativeWindow = nativeWindow;
     int width =  ANativeWindow_getWidth(mNativeWindow);
@@ -86,7 +87,7 @@ void CVideoRender::drawFrame(void * data){
         mRenderOpenGles->draw((void**)picture.data);
         mRenderOpenGles->swap();
     }
-    videoBuffer->release();
+    //videoBuffer->release();
     //__android_log_print(ANDROID_LOG_INFO, "FPS", " %ld", GFps_GetCurFps());
 }
 
@@ -100,18 +101,18 @@ void * CVideoRender::queueVideoRendering(void* baseObj){
             break;
         }
 
-        CVideoFrame* videoFrame = NULL;
         self->mInputQueue->acquire();
-        if(!self->mInputQueue->empty()){
-            videoFrame = self->mInputQueue->front();
-            self->mInputQueue->pop_front();
-        }
-        self->mInputQueue->release();
-        if(!videoFrame){
+        if(self->mInputQueue->empty()) {
+            self->mInputQueue->release();
             continue;
         }
+        MessageType msgType = self->mInputQueue->front().type;
+        void * msgData = self->mInputQueue->front().data;
 
+        self->mInputQueue->pop_front();
+        self->mInputQueue->release();
 
+        /*
         if(self->mIsUsingPts) {
             MediaBuffer *videoBuffer = (MediaBuffer *)videoFrame->data;
             sp<MetaData> metaData = videoBuffer->meta_data();
@@ -137,17 +138,23 @@ void * CVideoRender::queueVideoRendering(void* baseObj){
                 }
             }
         }
-
-        if(videoFrame->isFrist){
-            self->initializeRender(videoFrame->colorspace, videoFrame->width, videoFrame->height);
+*/
+        switch(msgType){
+            case MessageType::AUDIO_RENDER_CONFIG:{
+                CVideoFrameConfig* frameConfig = (CVideoFrameConfig*) msgData;
+                self->initializeRender(frameConfig->colorspace, frameConfig->width, frameConfig->height);
+                break;
+            }
+            case MessageType::VIDEO_FRAME:{
+                CVideoFrame* frame = (CVideoFrame*)msgData;
+                self->drawFrame(frame->data);
+                break;
+            }
         }
-        self->drawFrame(videoFrame->data);
-
-
 
         //__android_log_print(ANDROID_LOG_INFO, "FPS", " %ld", GFps_GetCurFps());
 
-        delete  videoFrame;
+        clearCMessage(msgType,msgData);
 
 
     }
@@ -161,23 +168,23 @@ void * CVideoRender::queueVideoRendering(void* baseObj){
 //=========================================================
 
 
-class CustomSource : public MediaSource {
+class CVideoSource : public MediaSource {
 public:
-    CustomSource(CDemuxer * demuxer) {
-        mDemuxer = demuxer;
+    CVideoSource(AVCodecContext* codecContext, CQueue <CMessage>* inputQueu) {
+        mPacket = NULL;
         mConverter = NULL;
-        AVCodecContext* codecContext = mDemuxer->getVideoStream()->codec;
-        mInputQueu = mDemuxer->getVideoQueue();
+        mCodecContext = codecContext;
+        mInputQueu = inputQueu;
         mFormat = new MetaData;
-        size_t bufferSize = (codecContext->width * codecContext->height * 3) / 2;
+        size_t bufferSize = (mCodecContext->width * mCodecContext->height * 3) / 2;
         mGroup.add_buffer(new MediaBuffer(bufferSize));
 
-        switch (codecContext->codec_id) {
+        switch (mCodecContext->codec_id) {
             case CODEC_ID_H264:
                 mFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
                 mConverter = av_bitstream_filter_init("h264_mp4toannexb");
-                if (codecContext->extradata[0] == 1) {
-                    mFormat->setData(kKeyAVCC, kTypeAVCC, codecContext->extradata, codecContext->extradata_size);
+                if (mCodecContext->extradata[0] == 1) {
+                    mFormat->setData(kKeyAVCC, kTypeAVCC, mCodecContext->extradata, mCodecContext->extradata_size);
                 }
                 break;
             case CODEC_ID_MPEG4:
@@ -195,8 +202,8 @@ public:
             default:
                 break;
         }
-        mFormat->setInt32(kKeyWidth, codecContext->width);
-        mFormat->setInt32(kKeyHeight, codecContext->height);
+        mFormat->setInt32(kKeyWidth, mCodecContext->width);
+        mFormat->setInt32(kKeyHeight, mCodecContext->height);
     }
 
     virtual sp<MetaData> getFormat() {
@@ -214,36 +221,34 @@ public:
     virtual status_t read(MediaBuffer **buffer,
                           const MediaSource::ReadOptions *options) {
         status_t ret;
-        AVCodecContext* codecContext = NULL;
+        AVPacket* packet= NULL;
 
         for (;;) {
             mInputQueu->acquire();
             if (!mInputQueu->empty()) {
-                if(mInputQueu->front().type == VIDEO_CODEC_CONFIG){
-                    codecContext = (AVCodecContext*) mInputQueu->front().data;
+                if(mInputQueu->front().type == MessageType::VIDEO_PKT){
+                    packet = (AVPacket*) mInputQueu->front().data;
                     mInputQueu->pop_front();
+                    mInputQueu->release();
+                    break;
                 }
-                break;
+                return ERROR_END_OF_STREAM;
             }
             mInputQueu->release();
-
         }
 
-        AVPacket * packet = (AVPacket *)mInputQueu->front().data;
-        AVPacket packetOut= *packet;
-
-
-        mInputQueu->pop_front();
-        mInputQueu->release();
-
-        if (mConverter) {
-            while(!mDemuxer->getVideoStream())
-                usleep(1);
-            av_bitstream_filter_filter(mConverter, mDemuxer->getVideoStream()->codec, NULL, &packetOut.data, &packetOut.size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
-        }
-
-        //__android_log_print(ANDROID_LOG_INFO, "sometag", "paket size %d", packet->size);
         ret = mGroup.acquire_buffer(buffer);
+
+        if(packet == NULL){
+            return  ret;
+        }
+
+        AVPacket packetOut= *packet;
+        if (mConverter) {
+            av_bitstream_filter_filter(mConverter, mCodecContext, NULL, &packetOut.data, &packetOut.size, packet->data, packet->size, packet->flags & AV_PKT_FLAG_KEY);
+        }
+        //__android_log_print(ANDROID_LOG_INFO, "sometag", "paket size %d", packet->size);
+
         if (ret == OK) {
             memcpy((*buffer)->data(), packetOut.data, packetOut.size);
             (*buffer)->set_range(0, packetOut.size);
@@ -258,31 +263,36 @@ public:
         if(packetOut.data != packet->data){
             av_free(packetOut.data);
         }
-        av_free_packet(packet);
-        delete packet;
+
+        av_free_packet((AVPacket*)packet);
         return ret;
     }
 
-    virtual ~CustomSource() {
+
+    virtual ~CVideoSource() {
         if (mConverter) {
             av_bitstream_filter_close(mConverter);
         }
+        //delete mFormat;
+        //mFormat = NULL;
+        //avcodec_free_context(&context);
     }
 private:
     CQueue <CMessage>* mInputQueu;
-    CDemuxer *mDemuxer;
+    AVPacket* mPacket;
 
     MediaBufferGroup mGroup;
     sp<MetaData> mFormat;
 
+    AVCodecContext* mCodecContext;
     AVBitStreamFilterContext* mConverter;
 
 };
 
 //========================================================================
 
-CDecoder::CDecoder(CDemuxer * demuxer):CThread(queueVideoDecoding) {
-    mDemuxer = demuxer;
+CDecoder::CDecoder(CQueue <CMessage>* inputQueue):CThread(queueVideoDecoding) {
+    mInputQueue = inputQueue;
     mNativeWindow = NULL;
     mIsFlushDemuxer = false;
 }
@@ -290,9 +300,7 @@ CDecoder::CDecoder(CDemuxer * demuxer):CThread(queueVideoDecoding) {
 void CDecoder::flush() {
     mOutQueue.acquire();
     while(!mOutQueue.empty()){
-        MediaBuffer* videoBuffer = (MediaBuffer*)mOutQueue.front()->data;
-        videoBuffer->release();
-        delete (mOutQueue.front());
+        clearCMessage(&mOutQueue.front());
         mOutQueue.pop_front();
     }
     mOutQueue.release();
@@ -303,58 +311,84 @@ void CDecoder::flush() {
 
 void * CDecoder::queueVideoDecoding(void * baseObj){
     CDecoder * self = (CDecoder*) baseObj;
-    bool isFirstPacket = true;
     OMXClient client;
     client.connect();
-    sp<MediaSource> videoSource = new CustomSource(self->mDemuxer);
-    sp<MediaSource> videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), \
-               false, videoSource, NULL, OMXCodec::kHardwareCodecsOnly | OMXCodec::kOnlySubmitOneInputBufferAtOneTime,
-                                                    self->mNativeWindow);
-    videoDecoder->start();
-    int32_t frameWidth = -1;
-    int32_t frameHeight = -1;
-    videoSource->getFormat()->findInt32(kKeyWidth, &frameWidth);
-    videoSource->getFormat()->findInt32(kKeyHeight, &frameHeight);
-    int32_t colorFormat = -1;
-    videoDecoder->getFormat()->findInt32(kKeyColorFormat, &colorFormat);
+    sp<MediaSource> videoSource = NULL;
+    sp<MediaSource> videoDecoder = NULL;
 
-    if(self->mIsFlushDemuxer){
-        self->mDemuxer->flush();
-    }
+    //if(self->mIsFlushDemuxer){
+    //    self->mDemuxer->flush();
+    //}
+
 
     for (;;) {
+        MessageType msgType;
+        void * msgData = NULL;
+
         if(self->isCancel()){
             break;
         }
-        MediaBuffer *videoBuffer;
-        MediaSource::ReadOptions options;
-        status_t err = videoDecoder->read(&videoBuffer, &options);
-        if (err != OK || videoBuffer->range_length() <= 0) {
+
+        self->mInputQueue->acquire();
+        if (self->mInputQueue->empty()) {
+            self->mInputQueue->release();
             continue;
         }
 
+        msgType = self->mInputQueue->front().type;
+        // pkt reading from vidoe source
+        if(msgType != VIDEO_PKT){
+            msgData = self->mInputQueue->front().data;
+            self->mInputQueue->pop_front();
+        }
+        self->mInputQueue->release();
 
-        CVideoFrame * frame = new CVideoFrame();
-        memset(frame,0x0,sizeof(CVideoFrame));
-        frame->data = videoBuffer;
-        frame->pts = 0;
-        if(isFirstPacket) {
-            isFirstPacket = false;
-            frame->colorspace = colorFormat;
-            frame->width = frameWidth;
-            frame->height = frameHeight;
-            frame->isFrist = true;
+        if(msgType == VIDEO_CODEC_CONFIG){
+            if(videoDecoder.get()){
+                videoDecoder->stop();
+            }
+
+            videoSource = new CVideoSource((AVCodecContext*)msgData, self->mInputQueue);
+            videoDecoder = OMXCodec::Create(client.interface(), videoSource->getFormat(), \
+               false, videoSource, NULL, OMXCodec::kHardwareCodecsOnly | OMXCodec::kOnlySubmitOneInputBufferAtOneTime,
+                                            self->mNativeWindow);
+            videoDecoder->start();
+
+            CVideoFrameConfig * frameConfig = new CVideoFrameConfig();
+            videoSource->getFormat()->findInt32(kKeyWidth, &frameConfig->width);
+            videoSource->getFormat()->findInt32(kKeyHeight, &frameConfig->height);
+            videoDecoder->getFormat()->findInt32(kKeyColorFormat, &frameConfig->colorspace);
+
+            self->mOutQueue.acquire();
+            self->mOutQueue.push_back({MessageType::AUDIO_RENDER_CONFIG,frameConfig});
+            self->mOutQueue.release();
         }
 
-        self->mOutQueue.acquire();
-        self->mOutQueue.push_back(frame);
-        self->mOutQueue.release();
+        if(msgType == VIDEO_PKT && videoDecoder.get() && videoSource.get()){
 
+            MediaBuffer* videoBuffer;
+            MediaSource::ReadOptions options;
+            status_t err = videoDecoder->read(&videoBuffer, &options);
+            if (err != OK || videoBuffer->range_length() <= 0) {
+                continue;
+            }
 
+            CVideoFrame * frame = new CVideoFrame();
+            frame->data = videoBuffer;
+            frame->pts = 0;
+
+            self->mOutQueue.acquire();
+            self->mOutQueue.push_back({MessageType::VIDEO_FRAME,frame});
+            self->mOutQueue.release();
+        }
+        // not need clear, becouse clear in another objects
+        //clearCMessage(msgType, msgData);
     }
 
     self->flush();
-    videoDecoder->stop();
+    if(videoDecoder.get()){
+        videoDecoder->stop();
+    }
     client.disconnect();
 
     return NULL;

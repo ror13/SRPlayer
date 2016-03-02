@@ -22,7 +22,7 @@ void CPlayer::open(ANativeWindow* nativeWindow, CplayerConfig * conf){
 
     demuxer->openFile(conf->uri.c_str());
 
-    decoder = new CDecoder(demuxer);
+    decoder = new CDecoder(demuxer->getVideoQueue());
     decoder->setFlushDemuxer(conf->isFlush);
 
     videoRender = new CVideoRender(decoder->getOutQueue(),nativeWindow);

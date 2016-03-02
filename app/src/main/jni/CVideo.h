@@ -24,7 +24,7 @@ public:
         GLES_WINDOW,
         NATIVE_WINDOW
     };
-    CVideoRender(CQueue <CVideoFrame*>* inputQueue, ANativeWindow * nativeWindow);
+    CVideoRender(CQueue <CMessage>* inputQueue, ANativeWindow * nativeWindow);
     void drawFrame(void * data); // draw data on surface and swap surface
     void makeRender(); // created window
     void initializeRender(int colorspace, int frameWidth, int frameHeight); // configure curfaces
@@ -34,7 +34,7 @@ public:
 
 protected:
     static void * queueVideoRendering(void * baseObj);
-    CQueue <CVideoFrame*> * mInputQueue;
+    CQueue <CMessage> * mInputQueue;
     ANativeWindow * mNativeWindow;
     bool mIsUsingPts;
     int32_t mWindowType;
@@ -42,15 +42,13 @@ protected:
     AVPixelFormat mColorspace;
     int32_t mFrameWidth;
     int32_t mFrameHeight;
-
-
 };
 
 
 class CDecoder : public CThread {
 public:
-    CDecoder(CDemuxer * demuxer);
-    CQueue <CVideoFrame*>* getOutQueue(){return &mOutQueue;}
+    CDecoder(CQueue <CMessage>* inputQueue);
+    CQueue <CMessage>* getOutQueue(){return &mOutQueue;}
     void flush();
     void setFlushDemuxer(bool needFlush){mIsFlushDemuxer = needFlush;}
     void setNativeWindow(ANativeWindow* nativeWindow){mNativeWindow = nativeWindow;}
@@ -58,7 +56,8 @@ protected:
     static void * queueVideoDecoding(void * baseObj);
     CDemuxer * mDemuxer;
     ANativeWindow * mNativeWindow;
-    CQueue <CVideoFrame*> mOutQueue;
+    CQueue <CMessage> mOutQueue;
+    CQueue <CMessage> * mInputQueue;
     bool mIsFlushDemuxer;
 };
 

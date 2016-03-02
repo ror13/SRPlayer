@@ -84,13 +84,15 @@ template <class B_Type> class CQueue: public std::deque<B_Type>, public CMutex {
 };
 
 typedef struct{
-    bool isFrist;
-    int32_t colorspace;
-    int32_t width;
-    int32_t height;
     uint64_t pts;
     void* data;
 }CVideoFrame;
+
+typedef struct{
+    int32_t colorspace;
+    int32_t width;
+    int32_t height;
+}CVideoFrameConfig;
 
 typedef struct{
     int32_t size;
@@ -101,8 +103,12 @@ typedef struct{
 typedef enum {
     AUDIO_PKT = 0,
     VIDEO_PKT,
+    AUDIO_FRAME,
+    VIDEO_FRAME,
     AUDIO_CODEC_CONFIG,
     VIDEO_CODEC_CONFIG,
+    AUDIO_RENDER_CONFIG,
+    VIDEO_RENDER_CONFIG,
     FILE_EOF,
 } MessageType;
 
@@ -111,28 +117,9 @@ struct CMessage{
     void* data;
 };
 
-inline void clearCMessage(CMessage* msg){
-    if(msg->data == NULL){
-        return;
-    }
-    switch(msg->type){
-        case MessageType::AUDIO_PKT:
-        case MessageType::VIDEO_PKT:{
-            AVPacket* packet =(AVPacket*) msg->data;
-            av_free_packet(packet);
-            delete packet;
-            break;
-        }
-        case MessageType::AUDIO_CODEC_CONFIG:
-        case MessageType::VIDEO_CODEC_CONFIG:{
-            AVCodecContext* context = (AVCodecContext*) msg->data;
-            avcodec_free_context(&context);
-            break;
-        }
-        case MessageType::FILE_EOF:
-            break;
-    }
-}
+void clearCMessage(MessageType type, void* data);
+void clearCMessage(CMessage* msg);
+
 
 
 
