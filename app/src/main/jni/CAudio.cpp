@@ -3,6 +3,7 @@
 //
 
 #include "CAudio.h"
+#include "utils.h"
 
 #define AUDIO_OUT_DEVICE_CHANELS 2
 #define AUDIO_DEVICE_SAMPLERATE 44100
@@ -76,6 +77,12 @@ void * CAudioDecoder::queueAudioDecoding(void * baseObj){
         if(msgType == MessageType::AUDIO_CODEC_CONFIG){
             self->clear();
             self->configure((AVCodecContext*)msgData);
+            CAudioFrameConfig* audioFrameConfig = new CAudioFrameConfig;
+            audioFrameConfig->chanels = AUDIO_OUT_DEVICE_CHANELS;
+            audioFrameConfig->samplerate = AUDIO_DEVICE_SAMPLERATE;
+            self->mOutQueue.acquire();
+            self->mOutQueue.push_back({MessageType::AUDIO_RENDER_CONFIG,audioFrameConfig});
+            self->mOutQueue.release();
             continue;
         }
 
@@ -113,7 +120,7 @@ void * CAudioDecoder::queueAudioDecoding(void * baseObj){
         clearCMessage(msgType, msgData);
 
         self->mOutQueue.acquire();
-        self->mOutQueue.push_back(outFrame);
+        self->mOutQueue.push_back({MessageType::AUDIO_FRAME,outFrame});
         self->mOutQueue.release();
 
     }
@@ -128,14 +135,8 @@ void * CAudioDecoder::queueAudioDecoding(void * baseObj){
 void CAudioDecoder::flush() {
     mOutQueue.acquire();
     while(!mOutQueue.empty()){
-        CAudioFrame* audioFrame = (CAudioFrame*) mOutQueue.front();
+        clearCMessage(& mOutQueue.front());
         mOutQueue.pop_front();
-        if(audioFrame && audioFrame->data){
-            delete audioFrame->data;
-        }
-        if(audioFrame){
-            delete audioFrame;
-        }
     }
     mOutQueue.release();
 }
@@ -170,8 +171,10 @@ void CAudioRender::clear()
     mCurrentPlayingBuff = NULL;
 }
 
-CAudioRender::CAudioRender(CQueue <CAudioFrame*>* inputQueue):CThread(queueAudioRender)
+CAudioRender::CAudioRender(CQueue <CMessage>* inputQueue):CThread(queueAudioRender)
 {
+    mPlayer = NULL;
+    mPlayerObject = NULL;
     mCurrentPlayingBuff = NULL;
     mInputQueue = inputQueue;
     const SLInterfaceID pIDs[1] = {SL_IID_ENGINE};
@@ -195,11 +198,11 @@ CAudioRender::CAudioRender(CQueue <CAudioFrame*>* inputQueue):CThread(queueAudio
     if(result) LOG_ERROR("mOutputMixObj)->Realize  %d", result);
 }
 
-void CAudioRender::configure() {
+void CAudioRender::configure(int32_t chanels, int32_t samplerate) {
     DEBUG_PRINT_LINE;
     SLDataLocator_AndroidSimpleBufferQueue locatorBufferQueue = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 1}; /*one budder in queueи*/
     SLDataFormat_PCM formatPCM = {
-            SL_DATAFORMAT_PCM, AUDIO_OUT_DEVICE_CHANELS, AUDIO_DEVICE_SAMPLERATE*1000,
+            SL_DATAFORMAT_PCM, chanels, samplerate*1000,
             SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
             SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN
     };
@@ -240,14 +243,19 @@ void CAudioRender::bufferQueuePlayerCallBack (SLBufferQueueItf bufferQueue, void
             return;
         }
         self->mInputQueue->acquire();
-        if (!self->mInputQueue->empty()) {
-            audioFrame = self->mInputQueue->front();
-            self->mInputQueue->pop_front();
+        if (self->mInputQueue->empty()) {
+            self->mInputQueue->release();
+            continue;
         }
-        self->mInputQueue->release();
-        if (audioFrame) {
+
+        MessageType msgType = self->mInputQueue->front().type;
+        if(msgType == MessageType::AUDIO_FRAME) {
+            audioFrame = (CAudioFrame*) self->mInputQueue->front().data;
+            self->mInputQueue->pop_front();
+            self->mInputQueue->release();
             break;
         }
+        self->mInputQueue->release();
     }
 
     (*self->mBufferQueue)->Enqueue(self->mBufferQueue, audioFrame->data, audioFrame->size);
@@ -263,18 +271,40 @@ void CAudioRender::bufferQueuePlayerCallBack (SLBufferQueueItf bufferQueue, void
 
 void * CAudioRender::queueAudioRender(void * baseObj){
     CAudioRender* self = (CAudioRender*) baseObj;
-    self->configure();
-
-    (*self->mBufferQueue)->Clear(self->mBufferQueue);
-    /* need for start playing*/
-    self->bufferQueuePlayerCallBack(self->mBufferQueue,self); // no waite
 
     for(;;){
-        sleep(1);
         if(self->isCancel()){
             (*self->mPlayer)->SetPlayState(self->mPlayer, SL_PLAYSTATE_STOPPED);
             break;
         }
+
+
+        self->mInputQueue->acquire();
+        if (self->mInputQueue->empty()) {
+            self->mInputQueue->release();
+            continue;
+        }
+
+        MessageType msgType = self->mInputQueue->front().type;
+        void * msgData = self->mInputQueue->front().data;
+        if(msgType != MessageType::AUDIO_FRAME) {
+            self->mInputQueue->pop_front();
+        }
+        self->mInputQueue->release();
+
+        if(msgType == MessageType::AUDIO_RENDER_CONFIG){
+            if(self->mPlayer){
+                (*self->mPlayer)->SetPlayState(self->mPlayer, SL_PLAYSTATE_STOPPED);
+            }
+            self->clear();
+            CAudioFrameConfig* audioFrameConfig = (CAudioFrameConfig*) msgData;
+            self->configure(audioFrameConfig->chanels, audioFrameConfig->samplerate);
+            clearCMessage(msgType, msgData);
+            (*self->mBufferQueue)->Clear(self->mBufferQueue);
+            /* need for start playing*/
+            self->bufferQueuePlayerCallBack(self->mBufferQueue,self); // no waite
+        }
+
     }
 
     self->clear();

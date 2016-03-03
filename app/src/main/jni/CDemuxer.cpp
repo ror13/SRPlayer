@@ -7,6 +7,7 @@
 
 CDemuxer::CDemuxer():CThread(fileReading) {
     av_register_all();
+    mIsResentConfig = false;
     mVideoStream = -1;
     mAudioStream = -1;
     mEof = false;
@@ -60,7 +61,10 @@ void CDemuxer::openFile(const char * path){
         avformat_flush(mFormatContext);
     }
 
+    sendConfigMessage();
+}
 
+void CDemuxer::sendConfigMessage(){
     mVideoQueue.acquire();
     if(mVideoStream != -1 && mFormatContext->streams[mVideoStream]){
         AVCodecContext* context = avcodec_alloc_context3(NULL);
@@ -76,9 +80,7 @@ void CDemuxer::openFile(const char * path){
         mAudioQueue.push_back({MessageType::AUDIO_CODEC_CONFIG,context});
     }
     mAudioQueue.release();
-
 }
-
 void CDemuxer::configure(bool isLoop, bool isSkipPacket, unsigned int packetBufferSize, const char * rtspProtocolType){
     mIsSkipPacket = isSkipPacket;
     mPacketBufferSize = packetBufferSize;
@@ -102,6 +104,7 @@ void CDemuxer::flush(){
     mAudioQueue.release();
 
     avformat_flush(mFormatContext);
+    mIsResentConfig = true;
 }
 
 void* CDemuxer::fileReading(void * baseObj) {
@@ -149,10 +152,14 @@ void* CDemuxer::fileReading(void * baseObj) {
                 std::string fileNmae = self->mFormatContext->filename;
                 self->closeFile();
                 self->openFile(fileNmae.c_str());
+                self->mIsResentConfig = false;
                 continue;
             }
             self->mEof = true;
             break;
+        }
+        if(self->mIsResentConfig){
+            self->sendConfigMessage();
         }
         if (packet->stream_index == self->mAudioStream) {
             self->mAudioQueue.acquire();

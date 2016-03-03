@@ -51,6 +51,7 @@ void clearCMessage(MessageType type, void* data){
             avcodec_free_context(&context);
             break;
         }
+        case MessageType::AUDIO_RENDER_CONFIG:
         case MessageType::VIDEO_RENDER_CONFIG:{
             delete data;
             break;
@@ -59,6 +60,14 @@ void clearCMessage(MessageType type, void* data){
             CVideoFrame* vf = (CVideoFrame*) data;
             android::MediaBuffer* mediaBuffer = (android::MediaBuffer*) vf->data;
             mediaBuffer->release();
+            delete data;
+            break;
+        }
+        case MessageType::AUDIO_FRAME:{
+            CAudioFrame* audioFrame = (CAudioFrame*) data;
+            if(audioFrame && audioFrame->data){
+                delete audioFrame->data;
+            }
             delete data;
             break;
         }

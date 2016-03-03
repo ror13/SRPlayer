@@ -21,12 +21,12 @@ public:
     CAudioDecoder(CQueue <CMessage>* inputQueue);
     void configure(AVCodecContext* codecContext);
     void clear();
-    CQueue <CAudioFrame*>* getOutQueue(){return &mOutQueue;}
+    CQueue <CMessage>* getOutQueue(){return &mOutQueue;}
     void flush();
 protected:
     static void * queueAudioDecoding(void * baseObj);
     CQueue <CMessage>* mInputQueue;
-    CQueue <CAudioFrame*> mOutQueue;
+    CQueue <CMessage> mOutQueue;
     SwrContext* mSwrContext;
     AVCodecContext* mCodecContext;
 };
@@ -34,16 +34,16 @@ protected:
 
 class CAudioRender : public CThread{
 public:
-    CAudioRender(CQueue <CAudioFrame*>* inputQueue);
+    CAudioRender(CQueue <CMessage>* inputQueue);
     ~CAudioRender();
-    void configure();
+    void configure(int32_t chanels, int32_t samplerate);
     void clear();
 
 protected:
     static void * queueAudioRender(void * baseObj);
     static void bufferQueuePlayerCallBack (SLBufferQueueItf bufferQueue, void *baseObj);
 
-    CQueue <CAudioFrame*>* mInputQueue;
+    CQueue <CMessage>* mInputQueue;
 
     SLObjectItf mOutputMixObj;
     SLEngineItf mEngine;

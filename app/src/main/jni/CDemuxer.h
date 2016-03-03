@@ -22,6 +22,7 @@ public:
     CQueue <CMessage>* getVideoQueue(){return &mVideoQueue;};
     CQueue <CMessage>* getAudioQueue(){return &mAudioQueue;};
     void configure(bool isLoop = false, bool isSkipPacket = false, unsigned int packetBufferSize = 10, const char * rtspProtocolType = "tcp");
+    void sendConfigMessage();
     void setFlushOnOpen(bool flushOnOpen){mFlushOnOpen = flushOnOpen;}
     void flush();
     bool isEof(){ return mEof;};
@@ -41,5 +42,6 @@ protected:
     std::string  mRtspProtocolType;
     bool mFlushOnOpen;
     bool mIsLoop;
+    bool mIsResentConfig;
 };
 #endif //SYSRAZPLAYER_CDEMUXER_H

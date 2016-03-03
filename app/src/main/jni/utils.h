@@ -99,6 +99,10 @@ typedef struct{
     void* data;
 }CAudioFrame;
 
+typedef struct{
+    int32_t chanels;
+    int32_t samplerate;
+}CAudioFrameConfig;
 
 
 typedef enum {
