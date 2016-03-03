@@ -140,7 +140,7 @@ void * CVideoRender::queueVideoRendering(void* baseObj){
         }
 */
         switch(msgType){
-            case MessageType::AUDIO_RENDER_CONFIG:{
+            case MessageType::VIDEO_RENDER_CONFIG:{
                 CVideoFrameConfig* frameConfig = (CVideoFrameConfig*) msgData;
                 self->initializeRender(frameConfig->colorspace, frameConfig->width, frameConfig->height);
                 break;
@@ -171,7 +171,6 @@ void * CVideoRender::queueVideoRendering(void* baseObj){
 class CVideoSource : public MediaSource {
 public:
     CVideoSource(AVCodecContext* codecContext, CQueue <CMessage>* inputQueu) {
-        mPacket = NULL;
         mConverter = NULL;
         mCodecContext = codecContext;
         mInputQueu = inputQueu;
@@ -232,6 +231,7 @@ public:
                     mInputQueu->release();
                     break;
                 }
+                //mInputQueu->release();
                 return ERROR_END_OF_STREAM;
             }
             mInputQueu->release();
@@ -273,13 +273,11 @@ public:
         if (mConverter) {
             av_bitstream_filter_close(mConverter);
         }
-        //delete mFormat;
-        //mFormat = NULL;
-        //avcodec_free_context(&context);
+        mFormat = NULL;
+        avcodec_free_context(&mCodecContext);
     }
 private:
     CQueue <CMessage>* mInputQueu;
-    AVPacket* mPacket;
 
     MediaBufferGroup mGroup;
     sp<MetaData> mFormat;
@@ -322,7 +320,7 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
 
 
     for (;;) {
-        MessageType msgType;
+        MessageType msgType = MessageType::EMPTY_MESSAGE;
         void * msgData = NULL;
 
         if(self->isCancel()){
@@ -336,7 +334,7 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
         }
 
         msgType = self->mInputQueue->front().type;
-        // pkt reading from vidoe source
+        // pkt reading from video source
         if(msgType != VIDEO_PKT){
             msgData = self->mInputQueue->front().data;
             self->mInputQueue->pop_front();
@@ -360,7 +358,7 @@ void * CDecoder::queueVideoDecoding(void * baseObj){
             videoDecoder->getFormat()->findInt32(kKeyColorFormat, &frameConfig->colorspace);
 
             self->mOutQueue.acquire();
-            self->mOutQueue.push_back({MessageType::AUDIO_RENDER_CONFIG,frameConfig});
+            self->mOutQueue.push_back({MessageType::VIDEO_RENDER_CONFIG,frameConfig});
             self->mOutQueue.release();
         }
 

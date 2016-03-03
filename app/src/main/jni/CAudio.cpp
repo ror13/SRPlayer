@@ -4,35 +4,57 @@
 
 #include "CAudio.h"
 
-#define AUDIO_DEVICE_CHANELS 2
+#define AUDIO_OUT_DEVICE_CHANELS 2
+#define AUDIO_DEVICE_SAMPLERATE 44100
 
 
-CAudioDecoder::CAudioDecoder(CDemuxer * demuxer):CThread(queueAudioDecoding) {
-    mDemuxer = demuxer;
+CAudioDecoder::CAudioDecoder(CQueue <CMessage>* inputQueue):CThread(queueAudioDecoding) {
+    mInputQueue = inputQueue;
+    mSwrContext = NULL;
+    mCodecContext = NULL;
 }
+
+void CAudioDecoder::configure(AVCodecContext* codecContext){
+    mCodecContext = codecContext;
+    AVCodec *codec = avcodec_find_decoder(mCodecContext->codec_id);;
+    avcodec_open2(mCodecContext, codec, NULL);
+
+    //mSwrContext = swr_alloc();
+    mSwrContext = swr_alloc_set_opts(NULL,
+                           av_get_default_channel_layout(AUDIO_OUT_DEVICE_CHANELS),
+                           AV_SAMPLE_FMT_S16, // defaul for output device
+                           AUDIO_DEVICE_SAMPLERATE,
+                           mCodecContext->channel_layout,
+                           mCodecContext->sample_fmt ,
+                           mCodecContext->sample_rate,
+                           0,
+                           NULL);
+    swr_init(mSwrContext);
+
+}
+
+void CAudioDecoder::clear() {
+    if(mSwrContext && swr_is_initialized(mSwrContext)){
+        swr_close(mSwrContext);
+    }
+
+    if(mSwrContext){
+        swr_free(&mSwrContext);
+        mSwrContext = NULL;
+    }
+    if(mCodecContext){
+        avcodec_close(mCodecContext);
+        avcodec_free_context(&mCodecContext);
+        mCodecContext = NULL;
+    }
+
+
+}
+
+
 
 void * CAudioDecoder::queueAudioDecoding(void * baseObj){
     CAudioDecoder * self = (CAudioDecoder*) baseObj;
-
-    const AVStream* audioCodec = self->mDemuxer->getAudioStream();
-    if(audioCodec <= 0){
-        return NULL;
-    }
-
-    AVCodec *codec = avcodec_find_decoder(audioCodec->codec->codec_id);;
-    avcodec_open2(audioCodec->codec, codec, NULL);
-
-    SwrContext *swr = swr_alloc();
-    swr=swr_alloc_set_opts(NULL,
-                           AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16, 44100, // output params
-                           audioCodec->codec->channel_layout,
-                           audioCodec->codec->sample_fmt ,
-                           audioCodec->codec->sample_rate,
-                           0,
-                           NULL);
-    swr_init(swr);
-
-    CQueue <CMessage> * inputQueu = self->mDemuxer->getAudioQueue();
 
     for(;;){
         AVPacket * packet = NULL;
@@ -40,15 +62,25 @@ void * CAudioDecoder::queueAudioDecoding(void * baseObj){
         if(self->isCancel()){
             break;
         }
-        inputQueu->acquire();
-        if (!inputQueu->empty()) {
-            if(inputQueu->front().type == AUDIO_PKT)
-                packet = (AVPacket*) inputQueu->front().data;
-            inputQueu->pop_front();
+        self->mInputQueue->acquire();
+        if (self->mInputQueue->empty()) {
+            self->mInputQueue->release();
+            continue;
         }
-        inputQueu->release();
 
-        if(!packet){
+        MessageType msgType = self->mInputQueue->front().type;
+        void * msgData = self->mInputQueue->front().data;
+        self->mInputQueue->pop_front();
+        self->mInputQueue->release();
+
+        if(msgType == MessageType::AUDIO_CODEC_CONFIG){
+            self->clear();
+            self->configure((AVCodecContext*)msgData);
+            continue;
+        }
+
+        packet = (AVPacket*) msgData;
+        if(!packet || !self->mSwrContext){
             continue;
         }
 
@@ -56,29 +88,29 @@ void * CAudioDecoder::queueAudioDecoding(void * baseObj){
         AVFrame  pDecodedFrame = {0};
         int nGotFrame = 0;
 
-        int ret = avcodec_decode_audio4(audioCodec->codec,
+        int ret = avcodec_decode_audio4(self->mCodecContext,
                                         &pDecodedFrame,
                                         &nGotFrame,
                                         packet);
         if(ret < 0) LOG_ERROR("avcodec_decode_audio4  %d", ret);
 
         int out_linesize = 0;
-        int needed_buf_size = av_samples_get_buffer_size(&out_linesize, AUDIO_DEVICE_CHANELS,
+        int needed_buf_size = av_samples_get_buffer_size(&out_linesize, AUDIO_OUT_DEVICE_CHANELS,
                                                          pDecodedFrame.nb_samples, AV_SAMPLE_FMT_S16, 1);
 
         outFrame->data = new uint8_t[needed_buf_size];
         uint8_t *out[] = { (uint8_t *)outFrame->data };
-        int outsamples = swr_convert(swr, out, out_linesize, (const uint8_t**)pDecodedFrame.data, pDecodedFrame.nb_samples);
+        int outsamples = swr_convert(self->mSwrContext, out, out_linesize, (const uint8_t**)pDecodedFrame.data, pDecodedFrame.nb_samples);
 
-        outFrame->size = outsamples * 2 * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
+        outFrame->size = outsamples * AUDIO_OUT_DEVICE_CHANELS * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
         if(outsamples < 0){
             char errbuf[256];
             LOG_ERROR("avresample_convert_frame  %s", av_make_error_string (errbuf, 256,  outsamples));
         }
 
         av_frame_unref(&pDecodedFrame);
-        av_free_packet(packet);
-        delete packet;
+
+        clearCMessage(msgType, msgData);
 
         self->mOutQueue.acquire();
         self->mOutQueue.push_back(outFrame);
@@ -86,14 +118,9 @@ void * CAudioDecoder::queueAudioDecoding(void * baseObj){
 
     }
 
-    if(swr && swr_is_initialized(swr)){
-        swr_close(swr);
-    }
-    if(swr){
-        swr_free(&swr);
-    }
 
-    //avcodec_close(codec);
+    self->clear();
+
 
     self->flush();
 }
@@ -172,7 +199,7 @@ void CAudioRender::configure() {
     DEBUG_PRINT_LINE;
     SLDataLocator_AndroidSimpleBufferQueue locatorBufferQueue = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 1}; /*one budder in queueи*/
     SLDataFormat_PCM formatPCM = {
-            SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
+            SL_DATAFORMAT_PCM, AUDIO_OUT_DEVICE_CHANELS, AUDIO_DEVICE_SAMPLERATE*1000,
             SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
             SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN
     };

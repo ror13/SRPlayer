@@ -129,6 +129,8 @@ void* CDemuxer::fileReading(void * baseObj) {
                         self->mAudioQueue.pop_back();
                     }
                 }else{
+                    //LOG_ERROR("self->mVideoQueue  %d", self->mVideoQueue.size());
+                    //LOG_ERROR("self->self->mAudioQueue  %d", self->mAudioQueue.size());
                     self->mVideoQueue.release();
                     self->mAudioQueue.release();
                     usleep(1000000 / 60);

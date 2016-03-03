@@ -37,7 +37,7 @@ void CPlayer::open(ANativeWindow* nativeWindow, CplayerConfig * conf){
         videoRender->setUsingWindowType(CVideoRender::GLES_WINDOW);
     }
 
-    audioDecoder = new CAudioDecoder(demuxer);
+    audioDecoder = new CAudioDecoder(demuxer->getAudioQueue());
     audioRender = new CAudioRender(audioDecoder->getOutQueue());
 
 

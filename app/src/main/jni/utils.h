@@ -100,8 +100,10 @@ typedef struct{
 }CAudioFrame;
 
 
+
 typedef enum {
-    AUDIO_PKT = 0,
+    EMPTY_MESSAGE = 0,
+    AUDIO_PKT,
     VIDEO_PKT,
     AUDIO_FRAME,
     VIDEO_FRAME,

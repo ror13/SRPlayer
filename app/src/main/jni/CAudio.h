@@ -18,13 +18,17 @@ extern "C" {
 
 class CAudioDecoder : public CThread {
 public:
-    CAudioDecoder(CDemuxer * demuxer);
+    CAudioDecoder(CQueue <CMessage>* inputQueue);
+    void configure(AVCodecContext* codecContext);
+    void clear();
     CQueue <CAudioFrame*>* getOutQueue(){return &mOutQueue;}
     void flush();
 protected:
     static void * queueAudioDecoding(void * baseObj);
-    CDemuxer * mDemuxer;
+    CQueue <CMessage>* mInputQueue;
     CQueue <CAudioFrame*> mOutQueue;
+    SwrContext* mSwrContext;
+    AVCodecContext* mCodecContext;
 };
 
 
